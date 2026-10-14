@@ -1,0 +1,4 @@
+{
+    "name": "Week06.Metaballs.Graph",
+    "references": ["Week06.Metaballs", "Unity.RenderPipelines.Core.Runtime", "Unity.RenderPipelines.Universal.Runtime"]
+}

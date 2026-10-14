@@ -26,11 +26,15 @@ MonoBehaviour:
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
   - {fileID: 6378320747397945018}
-  m_RendererFeatureMap: ba96280ced588458
+  - {fileID: 2546053774646856624}
+  m_RendererFeatureMap: ba96280ced588458b04bde206b665523
   m_UseNativeRenderPass: 0
-  xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
+  xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
-  m_AssetVersion: 2
+  m_AssetVersion: 3
+  m_PrepassLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
   m_OpaqueLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -52,6 +56,19 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 0
+--- !u!114 &2546053774646856624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ec29da6e900e0641bc0578f4425c4bf, type: 3}
+  m_Name: Metaballs Graph
+  m_EditorClassIdentifier: Week06.Metaballs.Graph::MetaballGraphPass
+  m_Active: 1
 --- !u!114 &6378320747397945018
 MonoBehaviour:
   m_ObjectHideFlags: 0

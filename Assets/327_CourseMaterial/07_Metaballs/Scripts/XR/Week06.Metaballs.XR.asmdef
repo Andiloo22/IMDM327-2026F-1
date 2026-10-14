@@ -1,0 +1,4 @@
+{
+    "name": "Week06.Metaballs.XR",
+    "references": ["Week06.Metaballs", "Unity.XR.Interaction.Toolkit"]
+}

@@ -1,5 +1,18 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-3835363175952960815
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ec29da6e900e0641bc0578f4425c4bf, type: 3}
+  m_Name: Metaballs Graph
+  m_EditorClassIdentifier: Week06.Metaballs.Graph::MetaballGraphPass
+  m_Active: 1
 --- !u!114 &-3179252185640544889
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -40,11 +53,15 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: -3179252185640544889}
   - {fileID: 507384579033929373}
-  m_RendererFeatureMap: 87d58247fb06e1d39d16d41d96970a07
+  - {fileID: -3835363175952960815}
+  m_RendererFeatureMap: 87d58247fb06e1d39d16d41d96970a07d1b2b518830dc6ca
   m_UseNativeRenderPass: 1
-  xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
+  xrSystemData: {fileID: 0}
   postProcessData: {fileID: 0}
-  m_AssetVersion: 2
+  m_AssetVersion: 3
+  m_PrepassLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
   m_OpaqueLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295

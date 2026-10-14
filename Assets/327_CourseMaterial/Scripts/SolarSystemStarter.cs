@@ -2,7 +2,7 @@
 // Use CSV or JSON to load data into the simulation. Both formats are supported, but they use different data types. 
 // The CSV format uses a struct, while the JSON format uses a class. This script demonstrates how to load both formats and access their data.
 using UnityEngine;
-public class SolarSystemStarter : MonoBehaviour
+public class SolarSystemStarter: MonoBehaviour
 {
     // These components can be attached independently.
     DataCSV solarCSV;
@@ -10,6 +10,7 @@ public class SolarSystemStarter : MonoBehaviour
     const float G = 6.674e-11f; // Gravitational constant
     PlanetProperty[] planetProperties;
     private int numberOfSphere = 10;
+    public float TimeController = 1f;
     class PlanetProperty // why struct?
     {                   // https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/choosing-between-class-and-struct
         public GameObject planet;
@@ -63,11 +64,41 @@ public class SolarSystemStarter : MonoBehaviour
 
             // What is missing here? You need to set the initial position and velocity of each planet based on the loaded data.
             // ***WRITE YOUR CODE HERE***
+            // Init Position
+            float initAngle = Random.Range(0f, 2f * Mathf.PI);
+            float r = solarBodiesCSV[i].distance;
+            Debug.Log(initAngle);
+            planetProperties[i].actualPosition = new Vector3(r * Mathf.Cos(initAngle), r * Mathf.Sin(initAngle), 0f);
 
-
+            // Init Velocity
+            float initVelocity = solarBodiesCSV[i].initial_velocity;
+            planetProperties[i].velocity = new Vector3(initVelocity * Mathf.Cos(initAngle+ Mathf.PI/2f), initVelocity * Mathf.Sin(initAngle + Mathf.PI / 2f),0f);
+            // Scale
+            // + This is just pretty trails
+            TrailRenderer trailRenderer = planetProperties[i].planet.AddComponent<TrailRenderer>();
+            // Configure the TrailRenderer's properties
+            trailRenderer.time = 100.0f;  // Duration of the trail
+            trailRenderer.startWidth = 0.5f;  // Width of the trail at the start
+            trailRenderer.endWidth = 0.1f;    // Width of the trail at the end
+            // a material to the trail
+            trailRenderer.material = new Material(Shader.Find("Sprites/Default"));
+            // Set the colour gradient along the trail.
+            Gradient gradient = new Gradient();
+            Color targetColor = Color.HSVToRGB((float)i / numberOfSphere, 1f, 1f);
+            gradient.SetKeys(
+                new GradientColorKey[] {
+                    new GradientColorKey(Color.white, 0f), // (color, normalized position)
+                    new GradientColorKey(targetColor, 0.8f)
+                },
+                new GradientAlphaKey[] {
+                    new GradientAlphaKey(1f, 0f), // (alpha, normalized position) 
+                    new GradientAlphaKey(0f, 1f)
+                }
+            );
+            trailRenderer.colorGradient = gradient;
         }
     }
-    void Update()
+    void FixedUpdate()
     {
         // Loop for N-body gravity
         // How should we design the loop?
@@ -76,19 +107,31 @@ public class SolarSystemStarter : MonoBehaviour
        for (int i = 0; i < numberOfSphere; i++)
         {
             // ***WRITE YOUR CODE HERE***
+            planetProperties[i].acceleration = Vector3.zero;
         }
         // 01. Loop through each body to calculate the gravitational forces acting on it
         for (int i = 0; i < numberOfSphere; i++)
         {
-            // ***WRITE YOUR CODE HERE***
-            // for ( int j...)
+            for (int j = i + 1; j < numberOfSphere; j++)
+            {
+                Vector3 distance = planetProperties[i].actualPosition - planetProperties[j].actualPosition;
+                // GRavity
+                Vector3 gravity = CalculateGravity(distance, planetProperties[i].mass, planetProperties[j].mass);
+                planetProperties[i].acceleration -= gravity / planetProperties[i].mass;
+                planetProperties[j].acceleration += gravity / planetProperties[j].mass;
+            }
         }
         // 02. Loop through each body to update its velocity and position based on the calculated acceleration
        for (int i = 0; i < numberOfSphere; i++)
         {
             // ***WRITE YOUR CODE HERE***
+            planetProperties[i].velocity += planetProperties[i].acceleration * Time.fixedDeltaTime * TimeController;
+            //Debug.Log(planetProperties[i].acceleration);
 
+            planetProperties[i].actualPosition += planetProperties[i].velocity * Time.fixedDeltaTime * TimeController;
 
+            float scaledDistance = Mathf.Sqrt(planetProperties[i].actualPosition.magnitude / 1e8f);
+            planetProperties[i].planet.transform.position = scaledDistance * planetProperties[i].actualPosition.normalized;
             // Scale: float scaledDistance = Mathf.Sqrt(actualPosition[i].magnitude / 1e8f);
 
         }

@@ -1,0 +1,20 @@
+{
+  "name": "Week06.Metaballs.Tests",
+  "references": [
+    "Week06.Metaballs",
+    "Week06.Metaballs.Graph",
+    "Unity.InputSystem",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro",
+    "Week06.Metaballs.XR",
+    "Unity.XR.Interaction.Toolkit",
+    "Unity.XR.CoreUtils",
+    "Unity.XR.ARFoundation"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

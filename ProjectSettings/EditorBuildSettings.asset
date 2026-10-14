@@ -47,6 +47,30 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/MRUKSamples/VirtualHome/VirtualHome.unity
     guid: 89c9f2977ebcf294fabcd8a4b23e6858
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_ShaderBasics/Scenes/01_Color.unity
+    guid: fef617c578ab1054cb0386dc93ff4347
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_ShaderBasics/Scenes/02_UV.unity
+    guid: 7d67c28a1ca6baa4ca4fce1b80e4049c
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_ShaderBasics/Scenes/03_Gradient.unity
+    guid: 53e302edef19fa8428cafcec83464014
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_ShaderBasics/Scenes/04_Circle.unity
+    guid: 873d13d22f4fa2246b98de2bc29b6110
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_ShaderBasics/Scenes/05_Time.unity
+    guid: 3dad0f44f5ae05b43a499d015539588b
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_Metaballs/Scenes/01_Metaballs_2D.unity
+    guid: 3ea30398e27878b4284db2389571c214
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_Metaballs/Scenes/02_Metaballs_3D.unity
+    guid: 66d9a98bf3d846e4ba5334590d432c93
+  - enabled: 1
+    path: Assets/327_CourseMaterial/07_Metaballs/Scenes/03_Metaballs_MR.unity
+    guid: c237925d7e186fb4cb7a98c0863aac16
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: bfa1182bd221b4ca89619141f66f1260, type: 2}
     Unity.XR.WindowsMR.Settings: {fileID: 11400000, guid: dc5a169419fa04987b057f65238cf3ba, type: 2}

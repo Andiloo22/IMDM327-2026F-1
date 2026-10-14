@@ -12,18 +12,11 @@ public class ImageLoad : MonoBehaviour
     void Start()
     {
         var texture = Resources.Load<Texture2D>(imageFileName);
-        if (texture == null)
-        {
-            Debug.LogWarning("ImageLoad: missing image " + imageFileName, this);
-            return;
-        }
-
         var palette = GameObject.CreatePrimitive(PrimitiveType.Plane);
         palette.transform.SetParent(transform, false);
         palette.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
         palette.transform.localScale = new Vector3(
             imageSize * texture.width / texture.height / 10f, 1f, imageSize / 10f);
-        Destroy(palette.GetComponent<Collider>());
 
         material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
         material.mainTexture = texture;
@@ -33,10 +26,5 @@ public class ImageLoad : MonoBehaviour
         material.EnableKeyword("_ALPHATEST_ON");
         material.renderQueue = 2450;
         palette.GetComponent<MeshRenderer>().sharedMaterial = material;
-    }
-
-    void OnDestroy()
-    {
-        if (material != null) Destroy(material);
     }
 }

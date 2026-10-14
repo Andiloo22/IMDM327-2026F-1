@@ -1,0 +1,4 @@
+{
+    "name": "Week06.Metaballs",
+    "references": ["Unity.InputSystem", "Unity.TextMeshPro", "UnityEngine.UI"]
+}

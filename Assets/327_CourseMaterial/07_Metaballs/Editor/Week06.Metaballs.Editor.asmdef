@@ -1,0 +1,21 @@
+{
+  "name": "Week06.Metaballs.Editor",
+  "references": [
+    "Week06.Metaballs",
+    "Unity.InputSystem",
+    "Unity.TextMeshPro",
+    "UnityEngine.UI",
+    "UnityEditor.TestRunner",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.Universal.Runtime",
+    "Week06.Metaballs.XR",
+    "Unity.XR.Interaction.Toolkit",
+    "Unity.XR.CoreUtils",
+    "Unity.XR.ARFoundation",
+    "Unity.XR.OpenXR",
+    "Week06.Metaballs.Graph"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ]
+}
