@@ -46,7 +46,7 @@ public class MediaPipeInput : MonoBehaviour
             if (!File.Exists(destination)) File.Copy(file, destination);
         }
         AssetLoader.Provide(new StreamingAssetsResourceManager("MediaPipe"));
-        webcam = new WebCamSource(640, new[] { new ImageSource.ResolutionStruct(640, 480, 30) });
+        webcam = new WebCamSource(1280, new[] { new ImageSource.ResolutionStruct(1280, 720, 30) });
         webcam.SelectSource(Mathf.Clamp(cameraIndex, 0, WebCamTexture.devices.Length - 1));
         yield return webcam.Play();
         if (!webcam.isPrepared) yield break;
