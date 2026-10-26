@@ -235,7 +235,7 @@ MonoBehaviour:
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0
@@ -248,6 +248,7 @@ MonoBehaviour:
   m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
   m_RequiresDepthTexture: 0
   m_RequiresColorTexture: 0
+  m_Version: 2
   m_TaaSettings:
     m_Quality: 3
     m_FrameInfluence: 0.1
@@ -255,7 +256,6 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
-  m_Version: 2
 --- !u!1 &200
 GameObject:
   m_ObjectHideFlags: 0
@@ -342,16 +342,25 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   graphRunner: {fileID: 202}
   leftHandPosition: {x: 0, y: 0, z: 0}
-  leftHandPinch: 0
+  leftHandFist: 0
+  leftHandOpen: 0
+  leftHandOpenApart: 0
   rightHandPosition: {x: 0, y: 0, z: 0}
-  rightHandPinch: 0
+  rightHandFist: 0
+  rightHandOpen: 0
+  rightHandOpenApart: 0
   torsoPosition: {x: 0, y: 0, z: 0}
   headPosition: {x: 0, y: 0, z: 0}
+  spawnJointVisualizers: 1
+  jointPrefab: {fileID: 495552267032346713, guid: 22176570205568e40a5760d0ec8abb9b, type: 3}
+  leftHandParentTransform: {fileID: 0}
+  rightHandParentTransform: {fileID: 0}
   verboseLogging: 0
   leftHandPacketCount: 0
   rightHandPacketCount: 0
   posePacketCount: 0
-  pinchThreshold: 0.035
+  fistThreshold: 0.035
+  openApartThreshold: 0.05
 --- !u!114 &205
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -423,6 +432,55 @@ MonoBehaviour:
   closeDistance: 0.16
   trailShader: {fileID: 10753, guid: 0000000000000000f000000000000000, type: 0}
   pointShader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
+--- !u!1 &1582396662
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1582396664}
+  - component: {fileID: 1582396663}
+  m_Layer: 0
+  m_Name: Global Volume
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1582396663
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1582396662}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_IsGlobal: 1
+  priority: 0
+  blendDistance: 0
+  weight: 1
+  sharedProfile: {fileID: 11400000, guid: d3aa319293f90b74bb1b7d923636bf4f, type: 2}
+--- !u!4 &1582396664
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1582396662}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -430,3 +488,4 @@ SceneRoots:
   - {fileID: 101}
   - {fileID: 201}
   - {fileID: 301}
+  - {fileID: 1582396664}

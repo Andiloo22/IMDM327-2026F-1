@@ -1,8 +1,10 @@
 using System.Collections;
+using System.Collections.Generic;
 using Mediapipe;
 using Mediapipe.Unity;
 using Mediapipe.Unity.Sample.Holistic;
 using UnityEngine;
+using Color = UnityEngine.Color;
 
 [DisallowMultipleComponent]
 public class MediaPipeBodyTracker : MonoBehaviour
@@ -24,6 +26,13 @@ public class MediaPipeBodyTracker : MonoBehaviour
     [SerializeField] private Vector3 torsoPosition;
     [SerializeField] private Vector3 headPosition;
 
+    [Header("Metaball Visual Setup")]
+    [Tooltip("Optional: Assign prefabs or primitive spheres for the 21 joints to visualize metaballs.")]
+    [SerializeField] private bool spawnJointVisualizers = false;
+    [SerializeField] private GameObject jointPrefab;
+    [SerializeField] private Transform leftHandParentTransform;
+    [SerializeField] private Transform rightHandParentTransform;
+
     [Header("Debug / Diagnostics")]
     [SerializeField] private bool verboseLogging = false;
     [SerializeField] private int leftHandPacketCount;
@@ -33,6 +42,16 @@ public class MediaPipeBodyTracker : MonoBehaviour
     [Header("Detection Settings")]
     [SerializeField, Range(0.001f, 0.2f)] private float fistThreshold = 0.035f;
     [SerializeField, Range(0.001f, 0.2f)] private float openApartThreshold = 0.05f;
+
+    // Full 21 Landmark Arrays
+    private readonly Vector3[] leftHandLandmarks = new Vector3[21];
+    private readonly Vector3[] rightHandLandmarks = new Vector3[21];
+    private readonly Vector3[] pendingLeftLandmarks = new Vector3[21];
+    private readonly Vector3[] pendingRightLandmarks = new Vector3[21];
+
+    // Visualizer instance tracking
+    private Transform[] leftJointTransforms = new Transform[21];
+    private Transform[] rightJointTransforms = new Transform[21];
 
     private readonly object dataLock = new object();
     private Vector3 pendingLeftHandPosition;
@@ -70,6 +89,49 @@ public class MediaPipeBodyTracker : MonoBehaviour
     public Vector3 TorsoPosition => torsoPosition;
     public Vector3 HeadPosition => headPosition;
 
+    public void GetLeftHandLandmarks(Vector3[] buffer)
+    {
+        lock (dataLock)
+        {
+            if (buffer == null || buffer.Length < 21) return;
+            System.Array.Copy(leftHandLandmarks, buffer, 21);
+        }
+    }
+
+    public void GetRightHandLandmarks(Vector3[] buffer)
+    {
+        lock (dataLock)
+        {
+            if (buffer == null || buffer.Length < 21) return;
+            System.Array.Copy(rightHandLandmarks, buffer, 21);
+        }
+    }
+
+    private void Awake()
+    {
+        if (spawnJointVisualizers && jointPrefab != null)
+        {
+            InitializeVisualizers();
+        }
+    }
+
+    private void InitializeVisualizers()
+    {
+        if (leftHandParentTransform == null) leftHandParentTransform = new GameObject("LeftHand_MetaballRoot").transform;
+        if (rightHandParentTransform == null) rightHandParentTransform = new GameObject("RightHand_MetaballRoot").transform;
+
+        for (int i = 0; i < 21; i++)
+        {
+            var lObj = Instantiate(jointPrefab, leftHandParentTransform);
+            leftJointTransforms[i] = lObj.transform;
+            lObj.gameObject.SetActive(false);
+
+            var rObj = Instantiate(jointPrefab, rightHandParentTransform);
+            rightJointTransforms[i] = rObj.transform;
+            rObj.gameObject.SetActive(false);
+        }
+    }
+
     private void OnEnable()
     {
         if (graphRunner == null)
@@ -85,10 +147,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
         if (!TrySubscribe())
         {
-            if (verboseLogging)
-            {
-                Debug.Log($"{nameof(MediaPipeBodyTracker)} waiting for graph runner to initialise...");
-            }
             subscribeRoutine = StartCoroutine(SubscribeWhenReady());
         }
     }
@@ -105,15 +163,7 @@ public class MediaPipeBodyTracker : MonoBehaviour
         lock (dataLock)
         {
             leftHandTracked = rightHandTracked = poseTracked = false;
-            leftHandFist = leftHandOpen = leftHandOpenApart = false;
-            rightHandFist = rightHandOpen = rightHandOpenApart = false;
-            leftHandPosition = rightHandPosition = Vector3.zero;
         }
-    }
-
-    public void StopTracking()
-    {
-        OnDisable();
     }
 
     private IEnumerator SubscribeWhenReady()
@@ -125,17 +175,13 @@ public class MediaPipeBodyTracker : MonoBehaviour
                 subscribeRoutine = null;
                 yield break;
             }
-
             yield return null;
         }
     }
 
     private bool TrySubscribe()
     {
-        if (graphRunner == null || hasSubscriptions)
-        {
-            return hasSubscriptions;
-        }
+        if (graphRunner == null || hasSubscriptions) return hasSubscriptions;
 
         try
         {
@@ -144,12 +190,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
             graphRunner.OnPoseWorldLandmarksOutput += HandlePoseWorld;
             subscribedRunner = graphRunner;
             hasSubscriptions = true;
-
-            if (verboseLogging)
-            {
-                Debug.Log($"{nameof(MediaPipeBodyTracker)} listening to {graphRunner.name}");
-            }
-
             return true;
         }
         catch (System.NullReferenceException)
@@ -160,13 +200,7 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
     private void Unsubscribe()
     {
-        if (!hasSubscriptions)
-        {
-            subscribedRunner = null;
-            hasSubscriptions = false;
-            return;
-        }
-
+        if (!hasSubscriptions) return;
         var runner = subscribedRunner != null ? subscribedRunner : graphRunner;
         if (runner != null)
         {
@@ -178,7 +212,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
             }
             catch (System.NullReferenceException) { }
         }
-
         subscribedRunner = null;
         hasSubscriptions = false;
     }
@@ -195,15 +228,8 @@ public class MediaPipeBodyTracker : MonoBehaviour
                     leftHandFist = pendingLeftFist;
                     leftHandOpen = pendingLeftOpen;
                     leftHandOpenApart = pendingLeftOpenApart;
+                    System.Array.Copy(pendingLeftLandmarks, leftHandLandmarks, 21);
                 }
-                else
-                {
-                    leftHandPosition = Vector3.zero;
-                    leftHandFist = false;
-                    leftHandOpen = false;
-                    leftHandOpenApart = false;
-                }
-
                 leftDirty = false;
             }
 
@@ -215,15 +241,8 @@ public class MediaPipeBodyTracker : MonoBehaviour
                     rightHandFist = pendingRightFist;
                     rightHandOpen = pendingRightOpen;
                     rightHandOpenApart = pendingRightOpenApart;
+                    System.Array.Copy(pendingRightLandmarks, rightHandLandmarks, 21);
                 }
-                else
-                {
-                    rightHandPosition = Vector3.zero;
-                    rightHandFist = false;
-                    rightHandOpen = false;
-                    rightHandOpenApart = false;
-                }
-
                 rightDirty = false;
             }
 
@@ -234,13 +253,68 @@ public class MediaPipeBodyTracker : MonoBehaviour
                     torsoPosition = pendingTorsoPosition;
                     headPosition = pendingHeadPosition;
                 }
-                else
-                {
-                    torsoPosition = Vector3.zero;
-                    headPosition = Vector3.zero;
-                }
-
                 poseDirty = false;
+            }
+        }
+
+        // Update visualizer positions if enabled
+        if (spawnJointVisualizers)
+        {
+            UpdateVisualizerTransforms();
+        }
+    }
+
+    private void UpdateVisualizerTransforms()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        // Check if ANY of the boolean flags are active for each hand
+        bool leftCorrect = leftHandTracked && (leftHandFist || leftHandOpen || leftHandOpenApart);
+        bool rightCorrect = rightHandTracked && (rightHandFist || rightHandOpen || rightHandOpenApart);
+
+        for (int i = 0; i < 21; i++)
+        {
+            if (leftJointTransforms[i] != null)
+            {
+                leftJointTransforms[i].gameObject.SetActive(leftHandTracked);
+                if (leftHandTracked)
+                {
+                    Vector3 rawPos = leftHandLandmarks[i];
+                    leftJointTransforms[i].position = cam.ViewportToWorldPoint(new Vector3(1f - rawPos.x, 1f - rawPos.y, -cam.transform.position.z));
+
+                    var rend = leftJointTransforms[i].GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        Color targetColor = leftCorrect ? Color.green : Color.white;
+                        rend.material.color = targetColor;
+
+                        // Enable emission and update emission color for glowing shaders (like Universal Render Pipeline / Standard)
+                        rend.material.EnableKeyword("_EMISSION");
+                        rend.material.SetColor("_EmissionColor", targetColor * (leftCorrect ? 2f : 1f)); // Optional: multiplies intensity when green
+                    }
+                }
+            }
+
+            if (rightJointTransforms[i] != null)
+            {
+                rightJointTransforms[i].gameObject.SetActive(rightHandTracked);
+                if (rightHandTracked)
+                {
+                    Vector3 rawPos = rightHandLandmarks[i];
+                    rightJointTransforms[i].position = cam.ViewportToWorldPoint(new Vector3(1f - rawPos.x, 1f - rawPos.y, -cam.transform.position.z));
+
+                    var rend = rightJointTransforms[i].GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        Color targetColor = rightCorrect ? Color.green : Color.white;
+                        rend.material.color = targetColor;
+
+                        // Enable emission and update emission color
+                        rend.material.EnableKeyword("_EMISSION");
+                        rend.material.SetColor("_EmissionColor", targetColor * (rightCorrect ? 2f : 1f));
+                    }
+                }
             }
         }
     }
@@ -248,32 +322,27 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private void HandleLeftHand(object sender, OutputStream<NormalizedLandmarkList>.OutputEventArgs eventArgs)
     {
         leftHandPacketCount++;
-        if (verboseLogging && (leftHandPacketCount % 30 == 0))
-        {
-            Debug.Log($"{nameof(MediaPipeBodyTracker)} received {leftHandPacketCount} left-hand packets");
-        }
-
         var landmarkList = ExtractNormalizedLandmarks(eventArgs.packet);
 
         lock (dataLock)
         {
-            if (landmarkList != null && landmarkList.Landmark.Count > 0)
+            if (landmarkList != null && landmarkList.Landmark.Count >= 21)
             {
                 leftHandTracked = true;
                 pendingLeftHandPosition = ToUnityVector(landmarkList.Landmark[0]);
                 pendingLeftFist = IsFist(landmarkList);
                 pendingLeftOpen = IsOpenHand(landmarkList);
                 pendingLeftOpenApart = IsOpenHandApart(landmarkList);
+
+                for (int i = 0; i < 21; i++)
+                {
+                    pendingLeftLandmarks[i] = ToUnityVector(landmarkList.Landmark[i]);
+                }
             }
             else
             {
                 leftHandTracked = false;
-                pendingLeftHandPosition = Vector3.zero;
-                pendingLeftFist = false;
-                pendingLeftOpen = false;
-                pendingLeftOpenApart = false;
             }
-
             leftDirty = true;
         }
     }
@@ -281,32 +350,27 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private void HandleRightHand(object sender, OutputStream<NormalizedLandmarkList>.OutputEventArgs eventArgs)
     {
         rightHandPacketCount++;
-        if (verboseLogging && (rightHandPacketCount % 30 == 0))
-        {
-            Debug.Log($"{nameof(MediaPipeBodyTracker)} received {rightHandPacketCount} right-hand packets");
-        }
-
         var landmarkList = ExtractNormalizedLandmarks(eventArgs.packet);
 
         lock (dataLock)
         {
-            if (landmarkList != null && landmarkList.Landmark.Count > 0)
+            if (landmarkList != null && landmarkList.Landmark.Count >= 21)
             {
                 rightHandTracked = true;
                 pendingRightHandPosition = ToUnityVector(landmarkList.Landmark[0]);
                 pendingRightFist = IsFist(landmarkList);
                 pendingRightOpen = IsOpenHand(landmarkList);
                 pendingRightOpenApart = IsOpenHandApart(landmarkList);
+
+                for (int i = 0; i < 21; i++)
+                {
+                    pendingRightLandmarks[i] = ToUnityVector(landmarkList.Landmark[i]);
+                }
             }
             else
             {
                 rightHandTracked = false;
-                pendingRightHandPosition = Vector3.zero;
-                pendingRightFist = false;
-                pendingRightOpen = false;
-                pendingRightOpenApart = false;
             }
-
             rightDirty = true;
         }
     }
@@ -314,11 +378,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private void HandlePoseWorld(object sender, OutputStream<LandmarkList>.OutputEventArgs eventArgs)
     {
         posePacketCount++;
-        if (verboseLogging && (posePacketCount % 30 == 0))
-        {
-            Debug.Log($"{nameof(MediaPipeBodyTracker)} received {posePacketCount} pose packets");
-        }
-
         var worldLandmarks = ExtractWorldLandmarks(eventArgs.packet);
 
         lock (dataLock)
@@ -333,136 +392,66 @@ public class MediaPipeBodyTracker : MonoBehaviour
                 var leftHip = ToUnityVector(worldLandmarks.Landmark[23]);
                 var rightHip = ToUnityVector(worldLandmarks.Landmark[24]);
 
-                var shouldersCenter = (leftShoulder + rightShoulder) * 0.5f;
-                var hipsCenter = (leftHip + rightHip) * 0.5f;
-                pendingTorsoPosition = (shouldersCenter + hipsCenter) * 0.5f;
+                pendingTorsoPosition = ((leftShoulder + rightShoulder) * 0.5f + (leftHip + rightHip) * 0.5f) * 0.5f;
             }
             else
             {
                 poseTracked = false;
-                pendingHeadPosition = Vector3.zero;
-                pendingTorsoPosition = Vector3.zero;
             }
-
             poseDirty = true;
         }
     }
 
-    private NormalizedLandmarkList ExtractNormalizedLandmarks(Packet<NormalizedLandmarkList> packet)
-    {
-        return packet == null ? null : packet.Get(NormalizedLandmarkList.Parser);
-    }
-
-    private LandmarkList ExtractWorldLandmarks(Packet<LandmarkList> packet)
-    {
-        return packet == null ? null : packet.Get(LandmarkList.Parser);
-    }
-
-    private Vector3 ToUnityVector(NormalizedLandmark landmark)
-    {
-        return new Vector3(landmark.X, landmark.Y, landmark.Z);
-    }
-
-    private Vector3 ToUnityVector(Landmark landmark)
-    {
-        return new Vector3(landmark.X, landmark.Y, landmark.Z);
-    }
+    private NormalizedLandmarkList ExtractNormalizedLandmarks(Packet<NormalizedLandmarkList> packet) => packet?.Get(NormalizedLandmarkList.Parser);
+    private LandmarkList ExtractWorldLandmarks(Packet<LandmarkList> packet) => packet?.Get(LandmarkList.Parser);
+    private Vector3 ToUnityVector(NormalizedLandmark l) => new Vector3(l.X, l.Y, l.Z);
+    private Vector3 ToUnityVector(Landmark l) => new Vector3(l.X, l.Y, l.Z);
 
     private bool IsFist(NormalizedLandmarkList landmarks)
     {
-        if (landmarks.Landmark.Count < 21)
-        {
-            return false;
-        }
-
-        int curledFingersCount = 0;
-
-        if (IsFingerCurled(landmarks, 8, 6)) curledFingersCount++;
-        if (IsFingerCurled(landmarks, 12, 10)) curledFingersCount++;
-        if (IsFingerCurled(landmarks, 16, 14)) curledFingersCount++;
-        if (IsFingerCurled(landmarks, 20, 18)) curledFingersCount++;
-
-        return curledFingersCount >= 3;
+        int curled = 0;
+        if (IsFingerCurled(landmarks, 8, 6)) curled++;
+        if (IsFingerCurled(landmarks, 12, 10)) curled++;
+        if (IsFingerCurled(landmarks, 16, 14)) curled++;
+        if (IsFingerCurled(landmarks, 20, 18)) curled++;
+        return curled >= 3;
     }
 
     private bool IsFingerCurled(NormalizedLandmarkList landmarks, int tipIndex, int pipIndex)
     {
         var wrist = landmarks.Landmark[0];
-        var tip = landmarks.Landmark[tipIndex];
-        var pip = landmarks.Landmark[pipIndex];
-
-        var wristPos = new Vector3(wrist.X, wrist.Y, wrist.Z);
-        var tipPos = new Vector3(tip.X, tip.Y, tip.Z);
-        var pipPos = new Vector3(pip.X, pip.Y, pip.Z);
-
-        float tipToWrist = Vector3.Distance(tipPos, wristPos);
-        float pipToWrist = Vector3.Distance(pipPos, wristPos);
-
+        float tipToWrist = Vector3.Distance(ToUnityVector(landmarks.Landmark[tipIndex]), ToUnityVector(wrist));
+        float pipToWrist = Vector3.Distance(ToUnityVector(landmarks.Landmark[pipIndex]), ToUnityVector(wrist));
         return (tipToWrist < pipToWrist) || (tipToWrist < fistThreshold);
     }
 
-    private bool IsOpenHand(NormalizedLandmarkList landmarks)
-    {
-        if (landmarks.Landmark.Count < 21)
-        {
-            return false;
-        }
-
-        return IsFingerExtended(landmarks, 8, 6) &&
-               IsFingerExtended(landmarks, 12, 10) &&
-               IsFingerExtended(landmarks, 16, 14) &&
-               IsFingerExtended(landmarks, 20, 18) &&
-               !IsOpenHandApart(landmarks);
-    }
+    private bool IsOpenHand(NormalizedLandmarkList landmarks) =>
+        IsFingerExtended(landmarks, 8, 6) && IsFingerExtended(landmarks, 12, 10) &&
+        IsFingerExtended(landmarks, 16, 14) && IsFingerExtended(landmarks, 20, 18) && !IsOpenHandApart(landmarks);
 
     private bool IsOpenHandApart(NormalizedLandmarkList landmarks)
     {
-        if (landmarks.Landmark.Count < 21)
-        {
-            return false;
-        }
+        if (!IsFingerExtended(landmarks, 8, 6) || !IsFingerExtended(landmarks, 12, 10) ||
+            !IsFingerExtended(landmarks, 16, 14) || !IsFingerExtended(landmarks, 20, 18)) return false;
 
-        if (!IsFingerExtended(landmarks, 8, 6) ||
-            !IsFingerExtended(landmarks, 12, 10) ||
-            !IsFingerExtended(landmarks, 16, 14) ||
-            !IsFingerExtended(landmarks, 20, 18))
-        {
-            return false;
-        }
-
-        var thumbTip = new Vector3(landmarks.Landmark[4].X, landmarks.Landmark[4].Y, landmarks.Landmark[4].Z);
-        var indexTip = new Vector3(landmarks.Landmark[8].X, landmarks.Landmark[8].Y, landmarks.Landmark[8].Z);
-        var middleTip = new Vector3(landmarks.Landmark[12].X, landmarks.Landmark[12].Y, landmarks.Landmark[12].Z);
-        var ringTip = new Vector3(landmarks.Landmark[16].X, landmarks.Landmark[16].Y, landmarks.Landmark[16].Z);
-        var pinkyTip = new Vector3(landmarks.Landmark[20].X, landmarks.Landmark[20].Y, landmarks.Landmark[20].Z);
-
-        float thumbIndexDist = Vector3.Distance(thumbTip, indexTip);
-        float indexMiddleDist = Vector3.Distance(indexTip, middleTip);
-        float middleRingDist = Vector3.Distance(middleTip, ringTip);
-        float ringPinkyDist = Vector3.Distance(ringTip, pinkyTip);
-
-        int spreadCount = 0;
-        if (thumbIndexDist > openApartThreshold) spreadCount++;
-        if (indexMiddleDist > openApartThreshold) spreadCount++;
-        if (middleRingDist > openApartThreshold) spreadCount++;
-        if (ringPinkyDist > openApartThreshold) spreadCount++;
-
-        return spreadCount >= 3;
+        int spread = 0;
+        if (Vector3.Distance(ToUnityVector(landmarks.Landmark[4]), ToUnityVector(landmarks.Landmark[8])) > openApartThreshold) spread++;
+        if (Vector3.Distance(ToUnityVector(landmarks.Landmark[8]), ToUnityVector(landmarks.Landmark[12])) > openApartThreshold) spread++;
+        if (Vector3.Distance(ToUnityVector(landmarks.Landmark[12]), ToUnityVector(landmarks.Landmark[16])) > openApartThreshold) spread++;
+        if (Vector3.Distance(ToUnityVector(landmarks.Landmark[16]), ToUnityVector(landmarks.Landmark[20])) > openApartThreshold) spread++;
+        return spread >= 3;
     }
 
     private bool IsFingerExtended(NormalizedLandmarkList landmarks, int tipIndex, int pipIndex)
     {
         var wrist = landmarks.Landmark[0];
-        var tip = landmarks.Landmark[tipIndex];
-        var pip = landmarks.Landmark[pipIndex];
-
-        var wristPos = new Vector3(wrist.X, wrist.Y, wrist.Z);
-        var tipPos = new Vector3(tip.X, tip.Y, tip.Z);
-        var pipPos = new Vector3(pip.X, pip.Y, pip.Z);
-
-        float tipToWrist = Vector3.Distance(tipPos, wristPos);
-        float pipToWrist = Vector3.Distance(pipPos, wristPos);
-
+        float tipToWrist = Vector3.Distance(ToUnityVector(landmarks.Landmark[tipIndex]), ToUnityVector(wrist));
+        float pipToWrist = Vector3.Distance(ToUnityVector(landmarks.Landmark[pipIndex]), ToUnityVector(wrist));
         return tipToWrist > pipToWrist;
+    }
+
+    public void StopTracking()
+    {
+        OnDisable();
     }
 }
