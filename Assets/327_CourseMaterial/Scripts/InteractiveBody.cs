@@ -10,10 +10,27 @@ public class InteractiveBody : MonoBehaviour
 
     [Header("Gesture Audio")]
     public AudioSource gestureAudioSource;
+
+    // Keep the single clips as fallbacks for compatibility with existing Inspector settings.
     public AudioClip openGestureClip;
     public AudioClip fistGestureClip;
     public AudioClip openApartGestureClip;
     public AudioClip deathClip;
+
+    // Assign multiple clips to these arrays to choose a random clip each time.
+    public AudioClip[] openGestureClips;
+    public AudioClip[] fistGestureClips;
+    public AudioClip[] openApartGestureClips;
+    public AudioClip[] deathClips;
+
+    [Header("Explosion Audio Control")]
+    public float deathClipVolume = 0.02f;
+    public float deathSoundCooldown = 0.5f;
+    [Min(0f)]
+    public float explosionGestureAudioMuteTime = 0.3f;
+
+    private float nextDeathSoundTime;
+    private float suppressGestureAudioUntil;
 
     private bool previousLeftOpen;
     private bool previousRightOpen;
@@ -137,8 +154,6 @@ public class InteractiveBody : MonoBehaviour
 
     private void FixedUpdate()
     {
-        CheckGestureAudio();
-
         if (mp == null)
             mp = FindObjectOfType<MediaPipeBodyTracker>();
 
@@ -163,6 +178,11 @@ public class InteractiveBody : MonoBehaviour
 
         SpawnDuringOpenWindow();
         DeleteDuringFistWindow();
+
+        // Check gesture sounds after explosion events so new gesture sounds are
+        // suppressed on the same frame an explosion happens.
+        CheckGestureAudio();
+
         ApplyBodyGravity();
         ApplyRandomMovement();
         ApplyPalmAttraction();
@@ -787,22 +807,22 @@ public class InteractiveBody : MonoBehaviour
 
         // Play audio only on the transition into a confirmed gesture.
         if (confirmedLeftOpen && !previousLeftOpen)
-            PlayGestureAudio(openGestureClip);
+            PlayGestureAudio(GetRandomClip(openGestureClips, openGestureClip));
 
         if (confirmedRightOpen && !previousRightOpen)
-            PlayGestureAudio(openGestureClip);
+            PlayGestureAudio(GetRandomClip(openGestureClips, openGestureClip));
 
         if (confirmedLeftFist && !previousLeftFist)
-            PlayGestureAudio(fistGestureClip);
+            PlayGestureAudio(GetRandomClip(fistGestureClips, fistGestureClip));
 
         if (confirmedRightFist && !previousRightFist)
-            PlayGestureAudio(fistGestureClip);
+            PlayGestureAudio(GetRandomClip(fistGestureClips, fistGestureClip));
 
         if (confirmedLeftOpenApart && !previousLeftOpenApart)
-            PlayGestureAudio(openApartGestureClip);
+            PlayGestureAudio(GetRandomClip(openApartGestureClips, openApartGestureClip));
 
         if (confirmedRightOpenApart && !previousRightOpenApart)
-            PlayGestureAudio(openApartGestureClip);
+            PlayGestureAudio(GetRandomClip(openApartGestureClips, openApartGestureClip));
 
         // Store confirmed states, not raw MediaPipe detections.
         previousLeftOpen = confirmedLeftOpen;
@@ -815,16 +835,140 @@ public class InteractiveBody : MonoBehaviour
         previousRightOpenApart = confirmedRightOpenApart;
     }
 
+    private AudioClip GetRandomClip(AudioClip[] clips, AudioClip fallbackClip)
+    {
+        if (clips == null || clips.Length == 0)
+            return fallbackClip;
+
+        int validClipCount = 0;
+        for (int i = 0; i < clips.Length; i++)
+        {
+            if (clips[i] != null)
+                validClipCount++;
+        }
+
+        if (validClipCount == 0)
+            return fallbackClip;
+
+        int selectedIndex = Random.Range(0, validClipCount);
+
+        for (int i = 0; i < clips.Length; i++)
+        {
+            if (clips[i] == null)
+                continue;
+
+            if (selectedIndex == 0)
+                return clips[i];
+
+            selectedIndex--;
+        }
+
+        return fallbackClip;
+    }
+
+    private void PlayDeathSound()
+    {
+        AudioClip clip = GetRandomClip(deathClips, deathClip);
+        if (clip == null)
+            return;
+
+        // One shared cooldown limits how often death sounds start, even when
+        // many spheres explode at once. Existing sounds are never stopped.
+        if (Time.time < nextDeathSoundTime)
+            return;
+
+        float pitch = Random.Range(0.85f, 1.15f);
+        float minimumGap = Mathf.Max(
+            Mathf.Max(0.5f, deathSoundCooldown),
+            clip.length * 0.5f
+        );
+        nextDeathSoundTime = Time.time + minimumGap;
+
+        // Each playback gets its own AudioSource, so its pitch/volume cannot
+        // change or cut off another death or gesture sound.
+        PlayIndependentAudio(
+            clip,
+            null,
+            Mathf.Clamp01(deathClipVolume),
+            pitch,
+            "DeathAudioVoice"
+        );
+    }
+
     private void PlayGestureAudio(AudioClip clip)
     {
         if (gestureAudioSource == null || clip == null)
             return;
 
+        // Suppress new gesture sounds during explosions, but do not stop a
+        // gesture sound that is already playing.
+        if (Time.time < suppressGestureAudioUntil)
+            return;
+
         if (Time.time < nextGestureAudioTime)
             return;
 
-        gestureAudioSource.PlayOneShot(clip);
+        PlayIndependentAudio(
+            clip,
+            gestureAudioSource,
+            1f,
+            Random.Range(0.85f, 1.15f),
+            "GestureAudioVoice"
+        );
+
         nextGestureAudioTime = Time.time + gestureAudioCooldown;
+    }
+
+    private void PlayIndependentAudio(
+        AudioClip clip,
+        AudioSource template,
+        float volume,
+        float pitch,
+        string objectName)
+    {
+        if (clip == null)
+            return;
+
+        GameObject audioObject = new GameObject(objectName);
+        audioObject.transform.position = template != null
+            ? template.transform.position
+            : transform.position;
+        audioObject.transform.SetParent(transform, true);
+
+        AudioSource voice = audioObject.AddComponent<AudioSource>();
+        voice.playOnAwake = false;
+        voice.loop = false;
+        voice.clip = clip;
+        voice.volume = Mathf.Clamp01(volume * (template != null ? template.volume : 1f));
+        voice.pitch = pitch;
+
+        if (template != null)
+        {
+            // Preserve the Inspector-configured routing and playback behavior.
+            voice.outputAudioMixerGroup = template.outputAudioMixerGroup;
+            voice.mute = template.mute;
+            voice.bypassEffects = template.bypassEffects;
+            voice.bypassListenerEffects = template.bypassListenerEffects;
+            voice.bypassReverbZones = template.bypassReverbZones;
+            voice.priority = template.priority;
+            voice.panStereo = template.panStereo;
+            voice.spatialBlend = template.spatialBlend;
+            voice.reverbZoneMix = template.reverbZoneMix;
+            voice.dopplerLevel = template.dopplerLevel;
+            voice.spread = template.spread;
+            voice.rolloffMode = template.rolloffMode;
+            voice.minDistance = template.minDistance;
+            voice.maxDistance = template.maxDistance;
+            voice.velocityUpdateMode = template.velocityUpdateMode;
+        }
+        else
+        {
+            voice.priority = 128;
+            voice.spatialBlend = 0f;
+        }
+
+        voice.Play();
+        Destroy(audioObject, (clip.length / Mathf.Max(0.01f, Mathf.Abs(pitch))) + 0.1f);
     }
 
     private bool ConfirmGesture(
@@ -844,6 +988,14 @@ public class InteractiveBody : MonoBehaviour
 
     private void CreateGhostlyExplosion(Vector3 position, Color baseColor)
     {
+        // Block new gesture sounds briefly during explosions (for example,
+        // prevent the bell from triggering), without cutting off sounds already
+        // playing. Every playback uses its own AudioSource.
+        suppressGestureAudioUntil = Mathf.Max(
+            suppressGestureAudioUntil,
+            Time.time + explosionGestureAudioMuteTime
+        );
+
         GameObject explosion = new GameObject("GhostlyGreenExplosion");
         explosion.transform.position = position;
 
@@ -942,8 +1094,8 @@ public class InteractiveBody : MonoBehaviour
 
         particles.Emit(explosionParticleCount);
         particles.Play();
-        gestureAudioSource.pitch = Random.Range(0.85f, 1.15f);
-        gestureAudioSource.PlayOneShot(deathClip);
+
+        PlayDeathSound();
 
         Destroy(explosion, explosionDuration + 1f);
     }

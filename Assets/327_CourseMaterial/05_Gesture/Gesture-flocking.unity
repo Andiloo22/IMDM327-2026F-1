@@ -327,7 +327,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   graphRunner: {fileID: 202}
   cameraIndex: 0
-  showCamera: 1
+  showCamera: 0
   mirrorX: 1
 --- !u!114 &204
 MonoBehaviour:
@@ -453,6 +453,13 @@ MonoBehaviour:
   fistGestureClip: {fileID: 8300000, guid: e071983229b81324898d0e76c012ad2e, type: 3}
   openApartGestureClip: {fileID: 8300000, guid: e071983229b81324898d0e76c012ad2e, type: 3}
   deathClip: {fileID: 8300000, guid: 8f345a323e9ed2949bbac615829e1f76, type: 3}
+  openGestureClips: []
+  fistGestureClips: []
+  openApartGestureClips: []
+  deathClips: []
+  deathClipVolume: 0.2
+  deathSoundCooldown: 0
+  explosionGestureAudioMuteTime: 0
   gestureConfirmTime: 0.12
   gestureAudioCooldown: 0.3
   handLostGracePeriod: 0.2
@@ -465,7 +472,7 @@ MonoBehaviour:
   actionDuration: 1
   spawnInterval: 0.04
   releaseDebounce: 0.15
-  fistDeleteRadius: 1
+  fistDeleteRadius: 2
   minGhostSize: 0.65
   maxGhostSize: 1.25
   darkGreen: {r: 1, g: 1, b: 1, a: 1}
@@ -494,7 +501,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 0}
   m_PlayOnAwake: 0
-  m_Volume: 0.7
+  m_Volume: 0.1
   m_Pitch: 1
   Loop: 0
   Mute: 0
