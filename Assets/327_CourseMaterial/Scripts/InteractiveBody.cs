@@ -1,65 +1,78 @@
 
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class InteractiveBody : MonoBehaviour
 {
-    private float[] timer = new float[2];
-    private float waitTime = 2f;
-    private int[] spawnIndex = new int[2];
+    [Header("Body Appearance")]
+    public Material bodyMaterial;
 
+    [Header("Gesture Audio")]
+    public AudioSource gestureAudioSource;
+    public AudioClip openGestureClip;
+    public AudioClip fistGestureClip;
+    public AudioClip openApartGestureClip;
+    public AudioClip deathClip;
+
+    private bool previousLeftOpen;
+    private bool previousRightOpen;
+    private bool previousLeftFist;
+    private bool previousRightFist;
+    private bool previousLeftOpenApart;
+    private bool previousRightOpenApart;
+
+    [Header("Gesture Audio Stability")]
+    public float gestureConfirmTime = 0.12f;
+    public float gestureAudioCooldown = 0.3f;
+    public float handLostGracePeriod = 0.2f;
+
+    private float leftOpenTimer, rightOpenTimer;
+    private float leftFistTimer, rightFistTimer;
+    private float leftOpenApartTimer, rightOpenApartTimer;
+
+    private float nextGestureAudioTime;
+    private float leftLastTrackedTime, rightLastTrackedTime;
+
+    private const int NumberOfGhosts = 120;
+    private const int GhostsPerHand = NumberOfGhosts / 2;
+
+    [Header("Gravity")]
     public float G = 1f;
-    private GameObject[] body;
-    private BodyProperty[] bp;
-    private const int numberOfSphere = 120;
-
     public float fastforwardConst = 1f;
     public float radius = 3.5f;
-
-    private TrailRenderer[] trailRenderer;
-    private Transform[] ghostVisuals;
-    private MediaPipeBodyTracker mp;
-    private Camera cam;
-
     public float maxVelocity = 6f;
     public float closeDistance = 0.16f;
-    public Shader trailShader;
-
-    [Header("Hand Interaction")]
     public float interactiveMass = 50f;
+
+    [Header("Hand Actions")]
+    public float actionDuration = 1f;
+    public float spawnInterval = 0.2f;
+    public float releaseDebounce = 0.15f;
     public float fistDeleteRadius = 0.75f;
 
-    [Header("Ghost Size")]
+    [Header("Sphere Size")]
     public float minGhostSize = 0.65f;
     public float maxGhostSize = 1.25f;
 
-    [Header("Ghost Colors")]
+    [Header("Sphere Colors")]
     public Color darkGreen = new Color(0.02f, 0.3f, 0.08f);
     public Color brightGreen = new Color(0.2f, 1f, 0.35f);
     public Color ghostFaceColor = new Color(0.025f, 0.04f, 0.035f);
 
-    [Header("Trail Settings")]
-    [Range(0.01f, 0.5f)]
+    [Header("Trails")]
     public float trailWidthRatio = 0.12f;
-    [Range(0.001f, 0.1f)]
     public float trailEndWidthRatio = 0.015f;
     public float trailDuration = 3f;
+    public Shader trailShader;
 
-    [Header("Ghost Explosion")]
+    [Header("Ghostly Explosion")]
     public int explosionParticleCount = 45;
     public float explosionDuration = 2.5f;
     public float explosionMinSpeed = 0.6f;
     public float explosionMaxSpeed = 2.5f;
     public float explosionMinSize = 0.035f;
     public float explosionMaxSize = 0.12f;
-
-    private const float GhostBaseWidth = 0.9f;
-
-    private Vector3[] leftLandmarkBuffer = new Vector3[21];
-    private Vector3[] rightLandmarkBuffer = new Vector3[21];
-
-    private Mesh sharedGhostMesh;
-    private Material sharedFaceMaterial;
 
     private struct BodyProperty
     {
@@ -68,75 +81,99 @@ public class InteractiveBody : MonoBehaviour
         public Vector3 acceleration;
     }
 
+    private GameObject[] body;
+    private Transform[] ghostVisuals;
+    private TrailRenderer[] trailRenderer;
+    private BodyProperty[] bp;
+
+    // Circular slot search within each hand's 60-slot section.
+    private int[] nextSpawnOffset = new int[2];
+
+    private bool[] openArmed = new bool[2];
+    private bool[] fistArmed = new bool[2];
+
+    private bool[] openActionActive = new bool[2];
+    private bool[] fistActionActive = new bool[2];
+
+    private float[] openActionRemaining = new float[2];
+    private float[] fistActionRemaining = new float[2];
+
+    private float[] openReleaseTimer = new float[2];
+    private float[] fistReleaseTimer = new float[2];
+    private float[] spawnCooldown = new float[2];
+
+    private MediaPipeBodyTracker mp;
+    private Camera cam;
+
+    private readonly Vector3[] leftLandmarkBuffer = new Vector3[21];
+    private readonly Vector3[] rightLandmarkBuffer = new Vector3[21];
+
+    private Material sharedFaceMaterial;
+
     private void Start()
     {
         mp = FindObjectOfType<MediaPipeBodyTracker>();
         cam = Camera.main;
 
-        bp = new BodyProperty[numberOfSphere];
-        body = new GameObject[numberOfSphere];
-        trailRenderer = new TrailRenderer[numberOfSphere];
-        ghostVisuals = new Transform[numberOfSphere];
+        body = new GameObject[NumberOfGhosts];
+        ghostVisuals = new Transform[NumberOfGhosts];
+        trailRenderer = new TrailRenderer[NumberOfGhosts];
+        bp = new BodyProperty[NumberOfGhosts];
 
-        spawnIndex[0] = 0;
-        spawnIndex[1] = numberOfSphere / 2;
+        for (int hand = 0; hand < 2; hand++)
+        {
+            openArmed[hand] = true;
+            fistArmed[hand] = true;
+        }
 
-        sharedGhostMesh = CreateGhostMesh();
         sharedFaceMaterial = CreateColoredMaterial(ghostFaceColor);
 
         if (mp == null)
-        {
-            Debug.LogWarning(
-                "InteractiveBody could not find MediaPipeBodyTracker."
-            );
-        }
+            Debug.LogWarning("InteractiveBody could not find MediaPipeBodyTracker.");
 
         if (cam == null)
-        {
-            Debug.LogWarning(
-                "InteractiveBody could not find the Main Camera."
-            );
-        }
+            Debug.LogWarning("InteractiveBody could not find a Main Camera.");
     }
 
     private void FixedUpdate()
     {
+        CheckGestureAudio();
+
         if (mp == null)
             mp = FindObjectOfType<MediaPipeBodyTracker>();
 
         if (cam == null)
             cam = Camera.main;
 
-        // Reset acceleration for active ghosts.
-        for (int i = 0; i < numberOfSphere; i++)
+        if (mp == null || cam == null)
+            return;
+
+        UpdateActionStates();
+
+        mp.SetInteractionActionActive(
+            openActionActive[0] || fistActionActive[0],
+            openActionActive[1] || fistActionActive[1]
+        );
+
+        for (int i = 0; i < NumberOfGhosts; i++)
         {
             if (body[i] != null)
                 bp[i].acceleration = Vector3.zero;
         }
 
-        // Spawn ghosts from the center of each palm.
-        HandleSpawning();
-
-        // Delete ghosts near a closed fist.
-        HandleFistDeletion();
-
-        // Gravity between ghosts.
+        SpawnDuringOpenWindow();
+        DeleteDuringFistWindow();
         ApplyBodyGravity();
-
-        // Add occasional small random forces.
         ApplyRandomMovement();
-
-        // Pull ghosts toward an open, spread hand.
         ApplyPalmAttraction();
-
-        // Update position, direction, speed, and trail width.
         UpdateGhostMovement();
     }
 
-    private void HandleSpawning()
+    // Debounces gesture releases so small detection flickers do not
+    // repeatedly retrigger an action or permanently block recasting.
+    private void UpdateActionStates()
     {
-        if (mp == null || cam == null)
-            return;
+        float dt = Time.fixedDeltaTime;
 
         for (int hand = 0; hand < 2; hand++)
         {
@@ -144,59 +181,147 @@ public class InteractiveBody : MonoBehaviour
                 ? mp.LeftHandTracked
                 : mp.RightHandTracked;
 
-            bool open = hand == 0
-                ? mp.LeftHandOpen
-                : mp.RightHandOpen;
+            bool normalOpen = tracked && (
+                hand == 0
+                    ? mp.LeftHandOpen && !mp.LeftHandOpenApart
+                    : mp.RightHandOpen && !mp.RightHandOpenApart
+            );
 
-            if (!tracked || !open)
+            bool fist = tracked && (
+                hand == 0 ? mp.LeftHandFist : mp.RightHandFist
+            );
+
+            // OPEN-HAND ACTION
+            if (normalOpen)
             {
-                // Do not accumulate spawn timer while the hand is closed.
-                continue;
+                openReleaseTimer[hand] = 0f;
+
+                if (openArmed[hand])
+                {
+                    openArmed[hand] = false;
+                    openActionActive[hand] = true;
+                    openActionRemaining[hand] = actionDuration;
+                    spawnCooldown[hand] = 0f;
+                }
+            }
+            else
+            {
+                openReleaseTimer[hand] += dt;
+
+                // Only rearm after a continuous, stable release.
+                if (openReleaseTimer[hand] >= releaseDebounce)
+                {
+                    openArmed[hand] = true;
+                    openActionActive[hand] = false;
+                    openActionRemaining[hand] = 0f;
+                    spawnCooldown[hand] = 0f;
+                }
             }
 
-            if (timer[hand] > 0f)
-                timer[hand] -= Time.fixedDeltaTime;
+            if (openActionActive[hand])
+            {
+                openActionRemaining[hand] -= dt;
 
-            if (timer[hand] > 0f)
+                if (openActionRemaining[hand] <= 0f)
+                {
+                    openActionRemaining[hand] = 0f;
+                    openActionActive[hand] = false;
+                }
+            }
+
+            // FIST DESTRUCTION ACTION
+            if (fist)
+            {
+                fistReleaseTimer[hand] = 0f;
+
+                if (fistArmed[hand])
+                {
+                    fistArmed[hand] = false;
+                    fistActionActive[hand] = true;
+                    fistActionRemaining[hand] = actionDuration;
+                }
+            }
+            else
+            {
+                fistReleaseTimer[hand] += dt;
+
+                if (fistReleaseTimer[hand] >= releaseDebounce)
+                {
+                    fistArmed[hand] = true;
+                    fistActionActive[hand] = false;
+                    fistActionRemaining[hand] = 0f;
+                }
+            }
+
+            if (fistActionActive[hand])
+            {
+                fistActionRemaining[hand] -= dt;
+
+                if (fistActionRemaining[hand] <= 0f)
+                {
+                    fistActionRemaining[hand] = 0f;
+                    fistActionActive[hand] = false;
+                }
+            }
+        }
+    }
+
+    private void SpawnDuringOpenWindow()
+    {
+        for (int hand = 0; hand < 2; hand++)
+        {
+            if (!openActionActive[hand])
                 continue;
 
-            int index = spawnIndex[hand];
+            spawnCooldown[hand] -= Time.fixedDeltaTime;
 
-            int limit = hand == 0
-                ? numberOfSphere / 2
-                : numberOfSphere;
+            if (spawnCooldown[hand] > 0f)
+                continue;
 
-            if (index < limit)
+            int index = FindFreeSlot(hand);
+
+            if (index >= 0)
             {
                 Vector3 palmPosition;
 
                 if (TryGetPalmWorldPosition(hand, out palmPosition))
-                {
                     SpawnBody(index, palmPosition);
-                    spawnIndex[hand]++;
-                }
             }
 
-            timer[hand] = waitTime;
+            spawnCooldown[hand] = Mathf.Max(0.01f, spawnInterval);
         }
     }
 
-    private void HandleFistDeletion()
+    // Reuses destroyed slots instead of permanently exhausting the
+    // original 60 indices assigned to each hand.
+    private int FindFreeSlot(int hand)
     {
-        if (mp == null || cam == null)
-            return;
+        int start = hand * GhostsPerHand;
 
+        for (int offset = 0; offset < GhostsPerHand; offset++)
+        {
+            int relativeIndex =
+                (nextSpawnOffset[hand] + offset) % GhostsPerHand;
+
+            int index = start + relativeIndex;
+
+            if (body[index] == null)
+            {
+                nextSpawnOffset[hand] =
+                    (relativeIndex + 1) % GhostsPerHand;
+
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private void DeleteDuringFistWindow()
+    {
         for (int hand = 0; hand < 2; hand++)
         {
-            bool tracked = hand == 0
-                ? mp.LeftHandTracked
-                : mp.RightHandTracked;
-
-            bool fist = hand == 0
-                ? mp.LeftHandFist
-                : mp.RightHandFist;
-
-            if (!tracked || !fist)
+            if (!fistActionActive[hand])
                 continue;
 
             Vector3 palmPosition;
@@ -204,7 +329,7 @@ public class InteractiveBody : MonoBehaviour
             if (!TryGetPalmWorldPosition(hand, out palmPosition))
                 continue;
 
-            for (int i = 0; i < numberOfSphere; i++)
+            for (int i = 0; i < NumberOfGhosts; i++)
             {
                 if (body[i] == null)
                     continue;
@@ -220,14 +345,53 @@ public class InteractiveBody : MonoBehaviour
         }
     }
 
+    private bool TryGetPalmWorldPosition(
+        int hand,
+        out Vector3 worldPosition
+    )
+    {
+        worldPosition = Vector3.zero;
+
+        if (mp == null || cam == null)
+            return false;
+
+        if (hand == 0)
+            mp.GetLeftHandLandmarks(leftLandmarkBuffer);
+        else
+            mp.GetRightHandLandmarks(rightLandmarkBuffer);
+
+        Vector3[] landmarks = hand == 0
+            ? leftLandmarkBuffer
+            : rightLandmarkBuffer;
+
+        // 0 = wrist, 5/9/13/17 = finger-base knuckles.
+        Vector3 palmCenter = (
+            landmarks[0] +
+            landmarks[5] +
+            landmarks[9] +
+            landmarks[13] +
+            landmarks[17]
+        ) / 5f;
+
+        worldPosition = cam.ViewportToWorldPoint(
+            new Vector3(
+                1f - palmCenter.x,
+                1f - palmCenter.y,
+                -cam.transform.position.z
+            )
+        );
+
+        return true;
+    }
+
     private void ApplyBodyGravity()
     {
-        for (int i = 0; i < numberOfSphere; i++)
+        for (int i = 0; i < NumberOfGhosts; i++)
         {
             if (body[i] == null)
                 continue;
 
-            for (int j = i + 1; j < numberOfSphere; j++)
+            for (int j = i + 1; j < NumberOfGhosts; j++)
             {
                 if (body[j] == null)
                     continue;
@@ -242,8 +406,7 @@ public class InteractiveBody : MonoBehaviour
                     bp[j].mass
                 );
 
-                if (distance.sqrMagnitude >
-                    closeDistance * closeDistance)
+                if (distance.sqrMagnitude > closeDistance * closeDistance)
                 {
                     bp[i].acceleration += gravity / bp[i].mass;
                     bp[j].acceleration -= gravity / bp[j].mass;
@@ -259,7 +422,7 @@ public class InteractiveBody : MonoBehaviour
 
     private void ApplyRandomMovement()
     {
-        for (int i = 0; i < numberOfSphere; i++)
+        for (int i = 0; i < NumberOfGhosts; i++)
         {
             if (body[i] == null)
                 continue;
@@ -277,20 +440,19 @@ public class InteractiveBody : MonoBehaviour
 
     private void ApplyPalmAttraction()
     {
-        if (mp == null || cam == null)
-            return;
-
         for (int hand = 0; hand < 2; hand++)
         {
             bool tracked = hand == 0
                 ? mp.LeftHandTracked
                 : mp.RightHandTracked;
 
-            bool openApart = hand == 0
-                ? mp.LeftHandOpenApart
-                : mp.RightHandOpenApart;
+            bool openApart = tracked && (
+                hand == 0
+                    ? mp.LeftHandOpenApart
+                    : mp.RightHandOpenApart
+            );
 
-            if (!tracked || !openApart)
+            if (!openApart)
                 continue;
 
             Vector3 palmPosition;
@@ -298,7 +460,7 @@ public class InteractiveBody : MonoBehaviour
             if (!TryGetPalmWorldPosition(hand, out palmPosition))
                 continue;
 
-            for (int i = 0; i < numberOfSphere; i++)
+            for (int i = 0; i < NumberOfGhosts; i++)
             {
                 if (body[i] == null)
                     continue;
@@ -315,115 +477,64 @@ public class InteractiveBody : MonoBehaviour
         }
     }
 
-    // Gets the center of the palm from the actual landmark array.
-    // This deliberately does not use LeftHandPosition/RightHandPosition,
-    // because older tracker versions stored the wrist at landmark 0.
-    private bool TryGetPalmWorldPosition(int hand, out Vector3 worldPosition)
-    {
-        worldPosition = Vector3.zero;
-
-        if (mp == null || cam == null)
-            return false;
-
-        if (hand == 0)
-            mp.GetLeftHandLandmarks(leftLandmarkBuffer);
-        else
-            mp.GetRightHandLandmarks(rightLandmarkBuffer);
-
-        Vector3[] landmarks = hand == 0
-            ? leftLandmarkBuffer
-            : rightLandmarkBuffer;
-
-        // MediaPipe hand landmarks:
-        // 0 = wrist, 5 = index MCP, 9 = middle MCP,
-        // 13 = ring MCP, 17 = pinky MCP.
-        Vector3 palmCenter = (
-            landmarks[0] +
-            landmarks[5] +
-            landmarks[9] +
-            landmarks[13] +
-            landmarks[17]
-        ) / 5f;
-
-        // Convert the normalized camera position to the world,
-        // retaining the original project's mirrored-camera mapping.
-        worldPosition = cam.ViewportToWorldPoint(
-            new Vector3(
-                1f - palmCenter.x,
-                1f - palmCenter.y,
-                -cam.transform.position.z
-            )
-        );
-
-        return true;
-    }
-
     private void SpawnBody(int index, Vector3 spawnPosition)
     {
-        // The root stays at scale one, so the trail uses world units.
-        GameObject ghostRoot = new GameObject("CartoonGhost");
-        ghostRoot.transform.position = spawnPosition;
-
-        body[index] = ghostRoot;
+        // Create a simple built-in sphere.
+        GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        sphere.name = "Body";
+        sphere.transform.position = spawnPosition;
 
         float size = Random.Range(minGhostSize, maxGhostSize);
+        sphere.transform.localScale = Vector3.one * size;
 
-        Color ghostColor = Random.ColorHSV(
+        // Remove the collider, as in the original method.
+        Collider sphereCollider = sphere.GetComponent<Collider>();
+
+        if (sphereCollider != null)
+            Destroy(sphereCollider);
+
+        // Use the material assigned in the Inspector.
+        // If no material is assigned, use a randomly generated green material.
+        Color sphereColor = Random.ColorHSV(
             0.25f, 0.40f,
             0.65f, 1f,
             0.75f, 1f
         );
 
-        // All visual elements are scaled together beneath this transform.
-        GameObject visualObject = new GameObject("GhostVisual");
-        visualObject.transform.SetParent(ghostRoot.transform, false);
-        visualObject.transform.localScale = Vector3.one * size;
-        ghostVisuals[index] = visualObject.transform;
+        Renderer sphereRenderer = sphere.GetComponent<Renderer>();
 
-        // Body mesh: a rounded sheet with exactly three bottom scallops.
-        GameObject meshObject = new GameObject("GhostSheet");
-        meshObject.transform.SetParent(visualObject.transform, false);
+        if (sphereRenderer != null)
+        {
+            if (bodyMaterial != null)
+            {
+                sphereRenderer.material = bodyMaterial;
+                sphereColor = bodyMaterial.color;
+            }
+            else
+            {
+                sphereRenderer.material = CreateColoredMaterial(sphereColor);
+            }
+        }
 
-        MeshFilter meshFilter = meshObject.AddComponent<MeshFilter>();
-        MeshRenderer meshRenderer = meshObject.AddComponent<MeshRenderer>();
+        body[index] = sphere;
 
-        meshFilter.sharedMesh = sharedGhostMesh;
-        meshRenderer.material = CreateColoredMaterial(ghostColor);
+        // Keep the transform reference for compatibility with existing code.
+        ghostVisuals[index] = sphere.transform;
 
-        // The visible front surface is on the negative-Z side,
-        // toward the standard Unity camera positioned at negative Z.
-        CreateFaceFeature(
-            visualObject.transform,
-            "LeftEye",
-            new Vector3(-0.16f, 0.13f, -0.115f),
-            new Vector3(0.075f, 0.105f, 0.035f)
-        );
+        // No eyes or mouth: the body is just a sphere.
 
-        CreateFaceFeature(
-            visualObject.transform,
-            "RightEye",
-            new Vector3(0.16f, 0.13f, -0.115f),
-            new Vector3(0.075f, 0.105f, 0.035f)
-        );
-
-        CreateFaceFeature(
-            visualObject.transform,
-            "Mouth",
-            new Vector3(0f, -0.06f, -0.12f),
-            new Vector3(0.045f, 0.065f, 0.03f)
-        );
-
+        // Preserve the original initial velocity.
         bp[index].velocity = new Vector3(
-            Mathf.Cos(index * 2f * Mathf.PI / numberOfSphere),
-            -Mathf.Sin(index * 2f * Mathf.PI / numberOfSphere),
+            Mathf.Cos(index * 2f * Mathf.PI / NumberOfGhosts),
+            -Mathf.Sin(index * 2f * Mathf.PI / NumberOfGhosts),
             0f
         ) * maxVelocity * 0.3f;
 
+        // Preserve the original mass.
         bp[index].mass = Random.Range(0.01f, 0.05f);
 
-        // TrailRenderer lives on the unscaled root. Its width is based
-        // on the actual width of the ghost mesh times the visual scale.
-        TrailRenderer trail = ghostRoot.AddComponent<TrailRenderer>();
+        // Preserve the trail behavior and scale-based width.
+        TrailRenderer trail = sphere.AddComponent<TrailRenderer>();
         trailRenderer[index] = trail;
 
         trail.time = trailDuration;
@@ -436,144 +547,39 @@ public class InteractiveBody : MonoBehaviour
             : Shader.Find("Sprites/Default");
 
         if (actualTrailShader != null)
-        {
             trail.material = new Material(actualTrailShader);
-        }
-
-        Color brighter = Color.Lerp(ghostColor, Color.white, 0.4f);
 
         Gradient gradient = new Gradient();
+
         gradient.SetKeys(
             new GradientColorKey[]
             {
-                new GradientColorKey(brighter, 0f),
-                new GradientColorKey(ghostColor, 0.4f),
-                new GradientColorKey(darkGreen, 1f)
+            new GradientColorKey(
+                Color.Lerp(sphereColor, Color.white, 0.4f), 0f),
+            new GradientColorKey(sphereColor, 0.4f),
+            new GradientColorKey(darkGreen, 1f)
             },
             new GradientAlphaKey[]
             {
-                new GradientAlphaKey(0.9f, 0f),
-                new GradientAlphaKey(0.65f, 0.45f),
-                new GradientAlphaKey(0f, 1f)
+            new GradientAlphaKey(0.9f, 0f),
+            new GradientAlphaKey(0.65f, 0.45f),
+            new GradientAlphaKey(0f, 1f)
             }
         );
 
         trail.colorGradient = gradient;
+
+        // Spawn the green explosion effect.
+        CreateGhostlyExplosion(spawnPosition, brightGreen);
     }
 
-    // Width of the ghost mesh in world units:
-    // mesh width is 0.9 units, multiplied by the visual's scale.
     private float GetGhostWorldWidth(int index)
     {
-        if (ghostVisuals == null || ghostVisuals[index] == null)
+        if (body == null || body[index] == null)
             return 0f;
 
-        return GhostBaseWidth *
-            Mathf.Abs(ghostVisuals[index].localScale.x);
-    }
-
-    private Mesh CreateGhostMesh()
-    {
-        // Create a 2D sheet-like outline and give it thickness.
-        // Front = negative Z; back = positive Z.
-        List<Vector2> outline = new List<Vector2>();
-
-        const int topSegments = 24;
-        const int bottomSegments = 48;
-
-        const float halfWidth = 0.45f;
-        const float archCenterY = 0.08f;
-        const float archHeight = 0.55f;
-        const float hemY = -0.33f;
-        const float scallopDepth = 0.13f;
-        const float frontZ = -0.08f;
-        const float backZ = 0.04f;
-
-        // Rounded dome from the left side across to the right side.
-        for (int i = 0; i <= topSegments; i++)
-        {
-            float angle = Mathf.PI -
-                Mathf.PI * i / topSegments;
-
-            float x = halfWidth * Mathf.Cos(angle);
-            float y = archCenterY +
-                archHeight * Mathf.Sin(angle);
-
-            outline.Add(new Vector2(x, y));
-        }
-
-        // Right edge of the sheet.
-        outline.Add(new Vector2(halfWidth, hemY));
-
-        // Bottom hem with three scalloped cloth points.
-        for (int i = 1; i <= bottomSegments; i++)
-        {
-            float t = (float)i / bottomSegments;
-
-            float x = Mathf.Lerp(halfWidth, -halfWidth, t);
-            float scallop = Mathf.Sin(3f * Mathf.PI * t);
-            float y = hemY -
-                scallopDepth * scallop * scallop;
-
-            outline.Add(new Vector2(x, y));
-        }
-
-        int count = outline.Count;
-        int frontCenter = 0;
-        int frontStart = 1;
-        int backCenter = count + 1;
-        int backStart = count + 2;
-
-        Vector3[] vertices = new Vector3[2 * (count + 1)];
-        int[] triangles = new int[count * 12];
-
-        // Center points for both sides.
-        vertices[frontCenter] = new Vector3(0f, 0f, frontZ);
-        vertices[backCenter] = new Vector3(0f, 0f, backZ);
-
-        for (int i = 0; i < count; i++)
-        {
-            vertices[frontStart + i] =
-                new Vector3(outline[i].x, outline[i].y, frontZ);
-
-            vertices[backStart + i] =
-                new Vector3(outline[i].x, outline[i].y, backZ);
-        }
-
-        int tri = 0;
-
-        for (int i = 0; i < count; i++)
-        {
-            int next = (i + 1) % count;
-
-            // Front face: clockwise outline gives a -Z-facing surface.
-            triangles[tri++] = frontCenter;
-            triangles[tri++] = frontStart + i;
-            triangles[tri++] = frontStart + next;
-
-            // Back face, with reverse winding.
-            triangles[tri++] = backCenter;
-            triangles[tri++] = backStart + next;
-            triangles[tri++] = backStart + i;
-
-            // Side walls connecting the front and back outlines.
-            triangles[tri++] = frontStart + i;
-            triangles[tri++] = backStart + i;
-            triangles[tri++] = frontStart + next;
-
-            triangles[tri++] = frontStart + next;
-            triangles[tri++] = backStart + i;
-            triangles[tri++] = backStart + next;
-        }
-
-        Mesh mesh = new Mesh();
-        mesh.name = "ThreeScallopCartoonGhost";
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
-
-        return mesh;
+        // Sphere diameter in world space.
+        return Mathf.Abs(body[index].transform.lossyScale.x);
     }
 
     private Material CreateColoredMaterial(Color color)
@@ -595,54 +601,24 @@ public class InteractiveBody : MonoBehaviour
         if (material.HasProperty("_Color"))
             material.SetColor("_Color", color);
 
-        // Make the ghost visible even under weak scene lighting.
         if (material.HasProperty("_EmissionColor"))
         {
             material.EnableKeyword("_EMISSION");
             material.SetColor("_EmissionColor", color * 0.25f);
         }
 
-        // Keep both sides drawable for the thin sheet mesh.
-        if (material.HasProperty("_Cull"))
-            material.SetFloat("_Cull", 0f);
-
         return material;
-    }
-
-    private void CreateFaceFeature(
-        Transform parent,
-        string featureName,
-        Vector3 localPosition,
-        Vector3 localScale
-    )
-    {
-        GameObject feature =
-            GameObject.CreatePrimitive(PrimitiveType.Sphere);
-
-        feature.name = featureName;
-        feature.transform.SetParent(parent, false);
-        feature.transform.localPosition = localPosition;
-        feature.transform.localScale = localScale;
-
-        Collider featureCollider = feature.GetComponent<Collider>();
-
-        if (featureCollider != null)
-            Destroy(featureCollider);
-
-        Renderer featureRenderer = feature.GetComponent<Renderer>();
-        featureRenderer.sharedMaterial = sharedFaceMaterial;
     }
 
     private void UpdateGhostMovement()
     {
-        for (int i = 0; i < numberOfSphere; i++)
+        for (int i = 0; i < NumberOfGhosts; i++)
         {
             if (body[i] == null)
                 continue;
 
             Vector3 position = body[i].transform.position;
 
-            // Keep ghosts inside the simulation radius.
             if (position.magnitude > radius)
             {
                 bp[i].acceleration -=
@@ -650,7 +626,6 @@ public class InteractiveBody : MonoBehaviour
                     (position.magnitude - radius) * 6f;
             }
 
-            // Keep movement mostly in the camera's XY plane.
             bp[i].acceleration.z -=
                 position.z * 3f + bp[i].velocity.z;
 
@@ -674,8 +649,7 @@ public class InteractiveBody : MonoBehaviour
                 Time.fixedDeltaTime *
                 fastforwardConst;
 
-            // Rotate the whole ghost in the screen plane so its
-            // upper/dome end points along its actual travel direction.
+            // Rotate the sphere and face toward its travel direction.
             Vector2 planarVelocity = new Vector2(
                 bp[i].velocity.x,
                 bp[i].velocity.y
@@ -692,8 +666,7 @@ public class InteractiveBody : MonoBehaviour
                     Quaternion.Euler(0f, 0f, angle);
             }
 
-            // Update the trail width from the ghost visual's real scale.
-            if (trailRenderer[i] != null && ghostVisuals[i] != null)
+            if (trailRenderer[i] != null)
             {
                 float worldWidth = GetGhostWorldWidth(i);
 
@@ -711,21 +684,18 @@ public class InteractiveBody : MonoBehaviour
         if (body[index] == null)
             return;
 
-        GameObject deletedGhost = body[index];
-        Vector3 position = deletedGhost.transform.position;
+        GameObject deletedSphere = body[index];
+        Vector3 position = deletedSphere.transform.position;
 
-        Renderer bodyRenderer =
-            deletedGhost.GetComponentInChildren<MeshRenderer>();
+        Renderer sphereRenderer = deletedSphere.GetComponent<Renderer>();
 
-        Color explosionColor = brightGreen;
-
-        if (bodyRenderer != null)
-            explosionColor = bodyRenderer.material.color;
+        Color explosionColor = sphereRenderer != null
+            ? sphereRenderer.material.color
+            : brightGreen;
 
         CreateGhostlyExplosion(position, explosionColor);
 
-        // Stop the trail from adding points but allow its existing
-        // points to fade out. Do not disable the TrailRenderer.
+        // Stop adding trail points; allow old ones to fade out.
         TrailRenderer trail = trailRenderer[index];
 
         if (trail != null)
@@ -734,21 +704,142 @@ public class InteractiveBody : MonoBehaviour
             trail.autodestruct = false;
         }
 
-        // Hide only the visual subtree so the trail remains visible.
-        if (ghostVisuals[index] != null)
-        {
-            Renderer[] visualRenderers =
-                ghostVisuals[index].GetComponentsInChildren<Renderer>(true);
+        // Hide the sphere and its face without hiding its trail.
+        Renderer[] renderers =
+            deletedSphere.GetComponentsInChildren<Renderer>(true);
 
-            foreach (Renderer visualRenderer in visualRenderers)
-                visualRenderer.enabled = false;
+        foreach (Renderer renderer in renderers)
+        {
+            if (!(renderer is TrailRenderer))
+                renderer.enabled = false;
         }
 
+        // Release the array slot immediately for future spawning.
         body[index] = null;
         ghostVisuals[index] = null;
         trailRenderer[index] = null;
 
-        Destroy(deletedGhost, trailDuration + 0.25f);
+        Destroy(deletedSphere, trailDuration + 0.25f);
+    }
+
+    private void CheckGestureAudio()
+    {
+        if (mp == null)
+            return;
+
+        // Track when each hand was last detected.
+        if (mp.LeftHandTracked)
+            leftLastTrackedTime = Time.time;
+
+        if (mp.RightHandTracked)
+            rightLastTrackedTime = Time.time;
+
+        // Allow brief tracking interruptions without resetting gesture states.
+        bool leftTrackingValid =
+            mp.LeftHandTracked ||
+            Time.time - leftLastTrackedTime <= handLostGracePeriod;
+
+        bool rightTrackingValid =
+            mp.RightHandTracked ||
+            Time.time - rightLastTrackedTime <= handLostGracePeriod;
+
+        // Current gestures, ignoring short tracking dropouts.
+        bool leftOpen = leftTrackingValid &&
+                        mp.LeftHandOpen &&
+                        !mp.LeftHandOpenApart;
+
+        bool rightOpen = rightTrackingValid &&
+                         mp.RightHandOpen &&
+                         !mp.RightHandOpenApart;
+
+        bool leftFist = leftTrackingValid &&
+                        mp.LeftHandTracked &&
+                        mp.LeftHandFist;
+
+        bool rightFist = rightTrackingValid &&
+                         mp.RightHandTracked &&
+                         mp.RightHandFist;
+
+        bool leftOpenApart = leftTrackingValid &&
+                             mp.LeftHandOpenApart;
+
+        bool rightOpenApart = rightTrackingValid &&
+                              mp.RightHandOpenApart;
+
+        // Require each gesture to remain active long enough to be confirmed.
+        bool confirmedLeftOpen =
+            ConfirmGesture(leftOpen, ref leftOpenTimer);
+
+        bool confirmedRightOpen =
+            ConfirmGesture(rightOpen, ref rightOpenTimer);
+
+        bool confirmedLeftFist =
+            ConfirmGesture(leftFist, ref leftFistTimer);
+
+        bool confirmedRightFist =
+            ConfirmGesture(rightFist, ref rightFistTimer);
+
+        bool confirmedLeftOpenApart =
+            ConfirmGesture(leftOpenApart, ref leftOpenApartTimer);
+
+        bool confirmedRightOpenApart =
+            ConfirmGesture(rightOpenApart, ref rightOpenApartTimer);
+
+        // Play audio only on the transition into a confirmed gesture.
+        if (confirmedLeftOpen && !previousLeftOpen)
+            PlayGestureAudio(openGestureClip);
+
+        if (confirmedRightOpen && !previousRightOpen)
+            PlayGestureAudio(openGestureClip);
+
+        if (confirmedLeftFist && !previousLeftFist)
+            PlayGestureAudio(fistGestureClip);
+
+        if (confirmedRightFist && !previousRightFist)
+            PlayGestureAudio(fistGestureClip);
+
+        if (confirmedLeftOpenApart && !previousLeftOpenApart)
+            PlayGestureAudio(openApartGestureClip);
+
+        if (confirmedRightOpenApart && !previousRightOpenApart)
+            PlayGestureAudio(openApartGestureClip);
+
+        // Store confirmed states, not raw MediaPipe detections.
+        previousLeftOpen = confirmedLeftOpen;
+        previousRightOpen = confirmedRightOpen;
+
+        previousLeftFist = confirmedLeftFist;
+        previousRightFist = confirmedRightFist;
+
+        previousLeftOpenApart = confirmedLeftOpenApart;
+        previousRightOpenApart = confirmedRightOpenApart;
+    }
+
+    private void PlayGestureAudio(AudioClip clip)
+    {
+        if (gestureAudioSource == null || clip == null)
+            return;
+
+        if (Time.time < nextGestureAudioTime)
+            return;
+
+        gestureAudioSource.PlayOneShot(clip);
+        nextGestureAudioTime = Time.time + gestureAudioCooldown;
+    }
+
+    private bool ConfirmGesture(
+    bool gestureActive,
+    ref float timer)
+    {
+        if (!gestureActive)
+        {
+            timer = 0f;
+            return false;
+        }
+
+        timer += Time.deltaTime;
+
+        return timer >= gestureConfirmTime;
     }
 
     private void CreateGhostlyExplosion(Vector3 position, Color baseColor)
@@ -759,28 +850,25 @@ public class InteractiveBody : MonoBehaviour
         ParticleSystem particles =
             explosion.AddComponent<ParticleSystem>();
 
-        // Stop the new particle system before changing its duration.
+        ParticleSystem.MainModule main = particles.main;
+        main.playOnAwake = false;
+
         particles.Stop(
             true,
             ParticleSystemStopBehavior.StopEmittingAndClear
         );
 
-        ParticleSystem.MainModule main = particles.main;
-        main.playOnAwake = false;
         main.loop = false;
         main.duration = explosionDuration;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
         main.startLifetime = new ParticleSystem.MinMaxCurve(
-            0.8f,
-            explosionDuration
+            0.8f, explosionDuration
         );
         main.startSpeed = new ParticleSystem.MinMaxCurve(
-            explosionMinSpeed,
-            explosionMaxSpeed
+            explosionMinSpeed, explosionMaxSpeed
         );
         main.startSize = new ParticleSystem.MinMaxCurve(
-            explosionMinSize,
-            explosionMaxSize
+            explosionMinSize, explosionMaxSize
         );
         main.startColor = Color.Lerp(baseColor, brightGreen, 0.6f);
         main.maxParticles = explosionParticleCount + 20;
@@ -854,6 +942,8 @@ public class InteractiveBody : MonoBehaviour
 
         particles.Emit(explosionParticleCount);
         particles.Play();
+        gestureAudioSource.pitch = Random.Range(0.85f, 1.15f);
+        gestureAudioSource.PlayOneShot(deathClip);
 
         Destroy(explosion, explosionDuration + 1f);
     }
@@ -873,9 +963,6 @@ public class InteractiveBody : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (sharedGhostMesh != null)
-            Destroy(sharedGhostMesh);
-
         if (sharedFaceMaterial != null)
             Destroy(sharedFaceMaterial);
     }

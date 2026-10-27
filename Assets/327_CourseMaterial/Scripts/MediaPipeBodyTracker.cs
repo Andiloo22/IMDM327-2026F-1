@@ -1,6 +1,5 @@
 
 using System.Collections;
-using System.Collections.Generic;
 using Mediapipe;
 using Mediapipe.Unity;
 using Mediapipe.Unity.Sample.Holistic;
@@ -13,11 +12,12 @@ public class MediaPipeBodyTracker : MonoBehaviour
     [Header("Graph Source")]
     [SerializeField] private HolisticTrackingGraph graphRunner;
 
-    [Header("Hand Data - Palm Center")]
+    [Header("Hand Data")]
     [SerializeField] private Vector3 leftHandPosition;
     [SerializeField] private bool leftHandFist;
     [SerializeField] private bool leftHandOpen;
     [SerializeField] private bool leftHandOpenApart;
+
     [SerializeField] private Vector3 rightHandPosition;
     [SerializeField] private bool rightHandFist;
     [SerializeField] private bool rightHandOpen;
@@ -27,14 +27,17 @@ public class MediaPipeBodyTracker : MonoBehaviour
     [SerializeField] private Vector3 torsoPosition;
     [SerializeField] private Vector3 headPosition;
 
-    [Header("Metaball Visual Setup")]
-    [Tooltip("Optional: Assign prefabs or primitive spheres for the 21 joints to visualize metaballs.")]
+    [Header("Hand Visualizers")]
     [SerializeField] private bool spawnJointVisualizers = false;
     [SerializeField] private GameObject jointPrefab;
     [SerializeField] private Transform leftHandParentTransform;
     [SerializeField] private Transform rightHandParentTransform;
 
-    [Header("Debug / Diagnostics")]
+    [Header("Hand Color Fade")]
+    [SerializeField, Min(0.1f)]
+    private float handColorFadeSpeed = 8f;
+
+    [Header("Debug")]
     [SerializeField] private bool verboseLogging = false;
     [SerializeField] private int leftHandPacketCount;
     [SerializeField] private int rightHandPacketCount;
@@ -42,20 +45,19 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
     [Header("Detection Settings")]
     [SerializeField, Range(0.001f, 0.2f)]
-    private float fistThreshold = 0.035f;
-
-    [SerializeField, Range(0.001f, 0.2f)]
     private float openApartThreshold = 0.05f;
 
-    // Full 21-landmark arrays.
     private readonly Vector3[] leftHandLandmarks = new Vector3[21];
     private readonly Vector3[] rightHandLandmarks = new Vector3[21];
     private readonly Vector3[] pendingLeftLandmarks = new Vector3[21];
     private readonly Vector3[] pendingRightLandmarks = new Vector3[21];
 
-    // Joint visualizer transforms.
     private Transform[] leftJointTransforms = new Transform[21];
     private Transform[] rightJointTransforms = new Transform[21];
+
+    // Cache the joint materials so their colors can be smoothly animated.
+    private Material[] leftJointMaterials = new Material[21];
+    private Material[] rightJointMaterials = new Material[21];
 
     private readonly object dataLock = new object();
 
@@ -79,14 +81,16 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private bool rightDirty;
     private bool poseDirty;
 
-    // Timeout tracking.
-    private int leftFramesSincePacket = 0;
-    private int rightFramesSincePacket = 0;
-    private const int trackingTimeoutLimit = 15;
+    private int leftFramesSincePacket;
+    private int rightFramesSincePacket;
+    private const int TrackingTimeoutLimit = 15;
 
     private Coroutine subscribeRoutine;
     private bool hasSubscriptions;
     private HolisticTrackingGraph subscribedRunner;
+
+    private bool interactionLeftActive;
+    private bool interactionRightActive;
 
     public Vector3 LeftHandPosition => leftHandPosition;
     public bool LeftHandFist => leftHandFist;
@@ -103,24 +107,33 @@ public class MediaPipeBodyTracker : MonoBehaviour
     public Vector3 TorsoPosition => torsoPosition;
     public Vector3 HeadPosition => headPosition;
 
+    public void SetInteractionActionActive(
+        bool leftActive,
+        bool rightActive
+    )
+    {
+        interactionLeftActive = leftActive;
+        interactionRightActive = rightActive;
+    }
+
     public void GetLeftHandLandmarks(Vector3[] buffer)
     {
+        if (buffer == null || buffer.Length < 21)
+            return;
+
         lock (dataLock)
         {
-            if (buffer == null || buffer.Length < 21)
-                return;
-
             System.Array.Copy(leftHandLandmarks, buffer, 21);
         }
     }
 
     public void GetRightHandLandmarks(Vector3[] buffer)
     {
+        if (buffer == null || buffer.Length < 21)
+            return;
+
         lock (dataLock)
         {
-            if (buffer == null || buffer.Length < 21)
-                return;
-
             System.Array.Copy(rightHandLandmarks, buffer, 21);
         }
     }
@@ -134,16 +147,12 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private void InitializeVisualizers()
     {
         if (leftHandParentTransform == null)
-        {
             leftHandParentTransform =
                 new GameObject("LeftHand_MetaballRoot").transform;
-        }
 
         if (rightHandParentTransform == null)
-        {
             rightHandParentTransform =
                 new GameObject("RightHand_MetaballRoot").transform;
-        }
 
         for (int i = 0; i < 21; i++)
         {
@@ -151,14 +160,30 @@ public class MediaPipeBodyTracker : MonoBehaviour
                 Instantiate(jointPrefab, leftHandParentTransform);
 
             leftJointTransforms[i] = leftObject.transform;
+            leftJointMaterials[i] = GetJointMaterial(leftObject);
             leftObject.SetActive(false);
 
             GameObject rightObject =
                 Instantiate(jointPrefab, rightHandParentTransform);
 
             rightJointTransforms[i] = rightObject.transform;
+            rightJointMaterials[i] = GetJointMaterial(rightObject);
             rightObject.SetActive(false);
         }
+    }
+
+    private Material GetJointMaterial(GameObject jointObject)
+    {
+        Renderer renderer = jointObject.GetComponent<Renderer>();
+
+        if (renderer == null)
+            renderer = jointObject.GetComponentInChildren<Renderer>();
+
+        if (renderer == null)
+            return null;
+
+        // Make a unique instance so each joint can be animated independently.
+        return renderer.material;
     }
 
     private void OnEnable()
@@ -169,10 +194,9 @@ public class MediaPipeBodyTracker : MonoBehaviour
         if (graphRunner == null)
         {
             Debug.LogWarning(
-                $"{nameof(MediaPipeBodyTracker)} on {name} could not find a " +
+                $"{nameof(MediaPipeBodyTracker)} on {name} could not find " +
                 $"{nameof(HolisticTrackingGraph)}."
             );
-
             return;
         }
 
@@ -201,11 +225,10 @@ public class MediaPipeBodyTracker : MonoBehaviour
             poseTracked = false;
 
             leftHandFist = false;
-            leftHandOpen = false;
-            leftHandOpenApart = false;
-
             rightHandFist = false;
+            leftHandOpen = false;
             rightHandOpen = false;
+            leftHandOpenApart = false;
             rightHandOpenApart = false;
 
             leftHandPosition = Vector3.zero;
@@ -220,6 +243,9 @@ public class MediaPipeBodyTracker : MonoBehaviour
             leftFramesSincePacket = 0;
             rightFramesSincePacket = 0;
         }
+
+        interactionLeftActive = false;
+        interactionRightActive = false;
     }
 
     private IEnumerator SubscribeWhenReady()
@@ -249,7 +275,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
             subscribedRunner = graphRunner;
             hasSubscriptions = true;
-
             return true;
         }
         catch (System.NullReferenceException)
@@ -288,10 +313,9 @@ public class MediaPipeBodyTracker : MonoBehaviour
     {
         lock (dataLock)
         {
-            // Timeout checks for the left hand.
             leftFramesSincePacket++;
 
-            if (leftFramesSincePacket > trackingTimeoutLimit)
+            if (leftFramesSincePacket > TrackingTimeoutLimit)
             {
                 leftHandTracked = false;
                 leftHandFist = false;
@@ -299,10 +323,9 @@ public class MediaPipeBodyTracker : MonoBehaviour
                 leftHandOpenApart = false;
             }
 
-            // Timeout checks for the right hand.
             rightFramesSincePacket++;
 
-            if (rightFramesSincePacket > trackingTimeoutLimit)
+            if (rightFramesSincePacket > TrackingTimeoutLimit)
             {
                 rightHandTracked = false;
                 rightHandFist = false;
@@ -372,86 +395,90 @@ public class MediaPipeBodyTracker : MonoBehaviour
             return;
 
         bool leftCorrect = leftHandTracked &&
-            (leftHandFist || leftHandOpen || leftHandOpenApart);
+            (interactionLeftActive || leftHandOpenApart);
 
         bool rightCorrect = rightHandTracked &&
-            (rightHandFist || rightHandOpen || rightHandOpenApart);
+            (interactionRightActive || rightHandOpenApart);
+
+        float blend = 1f - Mathf.Exp(
+            -handColorFadeSpeed * Time.deltaTime
+        );
 
         for (int i = 0; i < 21; i++)
         {
-            if (leftJointTransforms[i] != null)
-            {
-                leftJointTransforms[i].gameObject.SetActive(leftHandTracked);
+            UpdateOneVisualizer(
+                leftJointTransforms[i],
+                leftJointMaterials[i],
+                leftHandLandmarks[i],
+                leftHandTracked,
+                leftCorrect,
+                cam,
+                blend
+            );
 
-                if (leftHandTracked)
-                {
-                    Vector3 rawPosition = leftHandLandmarks[i];
+            UpdateOneVisualizer(
+                rightJointTransforms[i],
+                rightJointMaterials[i],
+                rightHandLandmarks[i],
+                rightHandTracked,
+                rightCorrect,
+                cam,
+                blend
+            );
+        }
+    }
 
-                    leftJointTransforms[i].position =
-                        cam.ViewportToWorldPoint(
-                            new Vector3(
-                                1f - rawPosition.x,
-                                1f - rawPosition.y,
-                                -cam.transform.position.z
-                            )
-                        );
+    private void UpdateOneVisualizer(
+        Transform joint,
+        Material jointMaterial,
+        Vector3 rawPosition,
+        bool tracked,
+        bool active,
+        Camera cam,
+        float blend
+    )
+    {
+        if (joint == null)
+            return;
 
-                    Renderer rend =
-                        leftJointTransforms[i].GetComponent<Renderer>();
+        joint.gameObject.SetActive(tracked);
 
-                    if (rend != null)
-                    {
-                        Color targetColor = leftCorrect
-                            ? Color.green
-                            : Color.white;
+        if (!tracked)
+            return;
 
-                        rend.material.color = targetColor;
-                        rend.material.EnableKeyword("_EMISSION");
+        joint.position = cam.ViewportToWorldPoint(
+            new Vector3(
+                1f - rawPosition.x,
+                1f - rawPosition.y,
+                -cam.transform.position.z
+            )
+        );
 
-                        rend.material.SetColor(
-                            "_EmissionColor",
-                            targetColor * (leftCorrect ? 2f : 1f)
-                        );
-                    }
-                }
-            }
+        if (jointMaterial == null)
+            return;
 
-            if (rightJointTransforms[i] != null)
-            {
-                rightJointTransforms[i].gameObject.SetActive(rightHandTracked);
+        Color targetColor = active ? Color.green : Color.white;
 
-                if (rightHandTracked)
-                {
-                    Vector3 rawPosition = rightHandLandmarks[i];
+        jointMaterial.color = Color.Lerp(
+            jointMaterial.color,
+            targetColor,
+            blend
+        );
 
-                    rightJointTransforms[i].position =
-                        cam.ViewportToWorldPoint(
-                            new Vector3(
-                                1f - rawPosition.x,
-                                1f - rawPosition.y,
-                                -cam.transform.position.z
-                            )
-                        );
+        if (jointMaterial.HasProperty("_EmissionColor"))
+        {
+            Color targetEmission =
+                targetColor * (active ? 2f : 1f);
 
-                    Renderer rend =
-                        rightJointTransforms[i].GetComponent<Renderer>();
+            Color currentEmission =
+                jointMaterial.GetColor("_EmissionColor");
 
-                    if (rend != null)
-                    {
-                        Color targetColor = rightCorrect
-                            ? Color.green
-                            : Color.white;
+            jointMaterial.EnableKeyword("_EMISSION");
 
-                        rend.material.color = targetColor;
-                        rend.material.EnableKeyword("_EMISSION");
-
-                        rend.material.SetColor(
-                            "_EmissionColor",
-                            targetColor * (rightCorrect ? 2f : 1f)
-                        );
-                    }
-                }
-            }
+            jointMaterial.SetColor(
+                "_EmissionColor",
+                Color.Lerp(currentEmission, targetEmission, blend)
+            );
         }
     }
 
@@ -462,30 +489,25 @@ public class MediaPipeBodyTracker : MonoBehaviour
     {
         leftHandPacketCount++;
 
-        NormalizedLandmarkList landmarkList =
+        NormalizedLandmarkList landmarks =
             ExtractNormalizedLandmarks(eventArgs.packet);
 
         lock (dataLock)
         {
             leftFramesSincePacket = 0;
 
-            if (landmarkList != null &&
-                landmarkList.Landmark.Count >= 21)
+            if (landmarks != null && landmarks.Landmark.Count >= 21)
             {
                 leftHandTracked = true;
+                pendingLeftHandPosition = GetPalmCenter(landmarks);
 
-                // FIX: save the center of the palm, not landmark 0 (wrist).
-                pendingLeftHandPosition = GetPalmCenter(landmarkList);
-
-                pendingLeftFist = IsFist(landmarkList);
-                pendingLeftOpen = IsOpenHand(landmarkList);
-                pendingLeftOpenApart = IsOpenHandApart(landmarkList);
+                pendingLeftFist = IsFist(landmarks);
+                pendingLeftOpen = IsOpenHand(landmarks);
+                pendingLeftOpenApart = IsOpenHandApart(landmarks);
 
                 for (int i = 0; i < 21; i++)
-                {
                     pendingLeftLandmarks[i] =
-                        ToUnityVector(landmarkList.Landmark[i]);
-                }
+                        ToUnityVector(landmarks.Landmark[i]);
             }
             else
             {
@@ -506,30 +528,25 @@ public class MediaPipeBodyTracker : MonoBehaviour
     {
         rightHandPacketCount++;
 
-        NormalizedLandmarkList landmarkList =
+        NormalizedLandmarkList landmarks =
             ExtractNormalizedLandmarks(eventArgs.packet);
 
         lock (dataLock)
         {
             rightFramesSincePacket = 0;
 
-            if (landmarkList != null &&
-                landmarkList.Landmark.Count >= 21)
+            if (landmarks != null && landmarks.Landmark.Count >= 21)
             {
                 rightHandTracked = true;
+                pendingRightHandPosition = GetPalmCenter(landmarks);
 
-                // FIX: save the center of the palm, not landmark 0 (wrist).
-                pendingRightHandPosition = GetPalmCenter(landmarkList);
-
-                pendingRightFist = IsFist(landmarkList);
-                pendingRightOpen = IsOpenHand(landmarkList);
-                pendingRightOpenApart = IsOpenHandApart(landmarkList);
+                pendingRightFist = IsFist(landmarks);
+                pendingRightOpen = IsOpenHand(landmarks);
+                pendingRightOpenApart = IsOpenHandApart(landmarks);
 
                 for (int i = 0; i < 21; i++)
-                {
                     pendingRightLandmarks[i] =
-                        ToUnityVector(landmarkList.Landmark[i]);
-                }
+                        ToUnityVector(landmarks.Landmark[i]);
             }
             else
             {
@@ -543,8 +560,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
         }
     }
 
-    // Average wrist and the four finger-base knuckles to estimate
-    // the middle of the palm in normalized camera coordinates.
     private Vector3 GetPalmCenter(NormalizedLandmarkList landmarks)
     {
         return (
@@ -563,30 +578,24 @@ public class MediaPipeBodyTracker : MonoBehaviour
     {
         posePacketCount++;
 
-        LandmarkList worldLandmarks =
-            ExtractWorldLandmarks(eventArgs.packet);
+        LandmarkList landmarks = ExtractWorldLandmarks(eventArgs.packet);
 
         lock (dataLock)
         {
-            if (worldLandmarks != null &&
-                worldLandmarks.Landmark.Count >= 33)
+            if (landmarks != null && landmarks.Landmark.Count >= 33)
             {
                 poseTracked = true;
-
                 pendingHeadPosition =
-                    ToUnityVector(worldLandmarks.Landmark[0]);
+                    ToUnityVector(landmarks.Landmark[0]);
 
                 Vector3 leftShoulder =
-                    ToUnityVector(worldLandmarks.Landmark[11]);
-
+                    ToUnityVector(landmarks.Landmark[11]);
                 Vector3 rightShoulder =
-                    ToUnityVector(worldLandmarks.Landmark[12]);
-
+                    ToUnityVector(landmarks.Landmark[12]);
                 Vector3 leftHip =
-                    ToUnityVector(worldLandmarks.Landmark[23]);
-
+                    ToUnityVector(landmarks.Landmark[23]);
                 Vector3 rightHip =
-                    ToUnityVector(worldLandmarks.Landmark[24]);
+                    ToUnityVector(landmarks.Landmark[24]);
 
                 pendingTorsoPosition =
                     (
@@ -740,14 +749,25 @@ public class MediaPipeBodyTracker : MonoBehaviour
         Vector3 segment1 = (pip - mcp).normalized;
         Vector3 segment2 = (tip - pip).normalized;
 
-        float segmentAlignment = Vector3.Dot(segment1, segment2);
-        bool isStraight = segmentAlignment > 0.85f;
+        bool isStraight = Vector3.Dot(segment1, segment2) > 0.85f;
 
         bool isExtendedOut =
             Vector3.Distance(tip, wrist) >
             Vector3.Distance(mcp, wrist);
 
         return isExtendedOut && isStraight;
+    }
+
+    private void OnDestroy()
+    {
+        for (int i = 0; i < 21; i++)
+        {
+            if (leftJointMaterials[i] != null)
+                Destroy(leftJointMaterials[i]);
+
+            if (rightJointMaterials[i] != null)
+                Destroy(rightJointMaterials[i]);
+        }
     }
 
     public void StopTracking()
