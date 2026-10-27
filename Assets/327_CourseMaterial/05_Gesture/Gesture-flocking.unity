@@ -425,13 +425,25 @@ MonoBehaviour:
   G: 1
   fastforwardConst: 1
   radius: 3.5
-  interactiveMass: 18
-  shakeSensitivity: 3
-  gravityDecay: 2
   maxVelocity: 6
   closeDistance: 0.16
   trailShader: {fileID: 10753, guid: 0000000000000000f000000000000000, type: 0}
-  pointShader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
+  interactiveMass: 18
+  fistDeleteRadius: 1
+  minGhostSize: 0.65
+  maxGhostSize: 1.25
+  darkGreen: {r: 0.02, g: 0.3, b: 0.08, a: 1}
+  brightGreen: {r: 0.2, g: 1, b: 0.35, a: 1}
+  ghostFaceColor: {r: 0.025, g: 0.04, b: 0.035, a: 1}
+  trailWidthRatio: 0.12
+  trailEndWidthRatio: 0.015
+  trailDuration: 3
+  explosionParticleCount: 45
+  explosionDuration: 2.5
+  explosionMinSpeed: 0.6
+  explosionMaxSpeed: 2.5
+  explosionMinSize: 0.035
+  explosionMaxSize: 0.12
 --- !u!1 &1582396662
 GameObject:
   m_ObjectHideFlags: 0
