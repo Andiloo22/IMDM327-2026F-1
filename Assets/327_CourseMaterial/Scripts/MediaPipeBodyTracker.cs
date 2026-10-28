@@ -55,7 +55,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private Transform[] leftJointTransforms = new Transform[21];
     private Transform[] rightJointTransforms = new Transform[21];
 
-    // Cache the joint materials so their colors can be smoothly animated.
     private Material[] leftJointMaterials = new Material[21];
     private Material[] rightJointMaterials = new Material[21];
 
@@ -182,7 +181,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
         if (renderer == null)
             return null;
 
-        // Make a unique instance so each joint can be animated independently.
         return renderer.material;
     }
 
@@ -301,7 +299,6 @@ public class MediaPipeBodyTracker : MonoBehaviour
             }
             catch (System.NullReferenceException)
             {
-                // The graph may already have been disposed.
             }
         }
 

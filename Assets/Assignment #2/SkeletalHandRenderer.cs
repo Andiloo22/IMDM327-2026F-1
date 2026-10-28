@@ -30,8 +30,6 @@ public class SkeletalHandRenderer : MonoBehaviour
     public Color outlineColor = new Color(0.09f, 0.065f, 0.07f, 1f);
     public Color boneColor = new Color(0.68f, 0.59f, 0.45f, 1f);
 
-    // MediaPipe hand landmark connections.
-    // Landmark 0 is the wrist; landmarks 1-20 trace the fingers.
     private static readonly Vector2Int[] Connections =
     {
         // Thumb
@@ -289,7 +287,6 @@ public class SkeletalHandRenderer : MonoBehaviour
             line.bone.SetPosition(0, start);
             line.bone.SetPosition(1, end);
 
-            // Keep the dark outline a little thicker than the bone.
             line.outline.startWidth = outlineWidth;
             line.outline.endWidth = outlineWidth;
 

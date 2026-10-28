@@ -11,13 +11,11 @@ public class InteractiveBody : MonoBehaviour
     [Header("Gesture Audio")]
     public AudioSource gestureAudioSource;
 
-    // Keep the single clips as fallbacks for compatibility with existing Inspector settings.
     public AudioClip openGestureClip;
     public AudioClip fistGestureClip;
     public AudioClip openApartGestureClip;
     public AudioClip deathClip;
 
-    // Assign multiple clips to these arrays to choose a random clip each time.
     public AudioClip[] openGestureClips;
     public AudioClip[] fistGestureClips;
     public AudioClip[] openApartGestureClips;
@@ -103,7 +101,6 @@ public class InteractiveBody : MonoBehaviour
     private TrailRenderer[] trailRenderer;
     private BodyProperty[] bp;
 
-    // Circular slot search within each hand's 60-slot section.
     private int[] nextSpawnOffset = new int[2];
 
     private bool[] openArmed = new bool[2];
@@ -179,8 +176,6 @@ public class InteractiveBody : MonoBehaviour
         SpawnDuringOpenWindow();
         DeleteDuringFistWindow();
 
-        // Check gesture sounds after explosion events so new gesture sounds are
-        // suppressed on the same frame an explosion happens.
         CheckGestureAudio();
 
         ApplyBodyGravity();
@@ -189,8 +184,6 @@ public class InteractiveBody : MonoBehaviour
         UpdateGhostMovement();
     }
 
-    // Debounces gesture releases so small detection flickers do not
-    // repeatedly retrigger an action or permanently block recasting.
     private void UpdateActionStates()
     {
         float dt = Time.fixedDeltaTime;
@@ -211,7 +204,6 @@ public class InteractiveBody : MonoBehaviour
                 hand == 0 ? mp.LeftHandFist : mp.RightHandFist
             );
 
-            // OPEN-HAND ACTION
             if (normalOpen)
             {
                 openReleaseTimer[hand] = 0f;
@@ -228,7 +220,6 @@ public class InteractiveBody : MonoBehaviour
             {
                 openReleaseTimer[hand] += dt;
 
-                // Only rearm after a continuous, stable release.
                 if (openReleaseTimer[hand] >= releaseDebounce)
                 {
                     openArmed[hand] = true;
@@ -249,7 +240,6 @@ public class InteractiveBody : MonoBehaviour
                 }
             }
 
-            // FIST DESTRUCTION ACTION
             if (fist)
             {
                 fistReleaseTimer[hand] = 0f;
@@ -312,8 +302,6 @@ public class InteractiveBody : MonoBehaviour
         }
     }
 
-    // Reuses destroyed slots instead of permanently exhausting the
-    // original 60 indices assigned to each hand.
     private int FindFreeSlot(int hand)
     {
         int start = hand * GhostsPerHand;
@@ -384,7 +372,6 @@ public class InteractiveBody : MonoBehaviour
             ? leftLandmarkBuffer
             : rightLandmarkBuffer;
 
-        // 0 = wrist, 5/9/13/17 = finger-base knuckles.
         Vector3 palmCenter = (
             landmarks[0] +
             landmarks[5] +
@@ -499,7 +486,6 @@ public class InteractiveBody : MonoBehaviour
 
     private void SpawnBody(int index, Vector3 spawnPosition)
     {
-        // Create a simple built-in sphere.
         GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         sphere.name = "Body";
         sphere.transform.position = spawnPosition;
@@ -507,14 +493,11 @@ public class InteractiveBody : MonoBehaviour
         float size = Random.Range(minGhostSize, maxGhostSize);
         sphere.transform.localScale = Vector3.one * size;
 
-        // Remove the collider, as in the original method.
         Collider sphereCollider = sphere.GetComponent<Collider>();
 
         if (sphereCollider != null)
             Destroy(sphereCollider);
 
-        // Use the material assigned in the Inspector.
-        // If no material is assigned, use a randomly generated green material.
         Color sphereColor = Random.ColorHSV(
             0.25f, 0.40f,
             0.65f, 1f,
@@ -538,22 +521,16 @@ public class InteractiveBody : MonoBehaviour
 
         body[index] = sphere;
 
-        // Keep the transform reference for compatibility with existing code.
         ghostVisuals[index] = sphere.transform;
 
-        // No eyes or mouth: the body is just a sphere.
-
-        // Preserve the original initial velocity.
         bp[index].velocity = new Vector3(
             Mathf.Cos(index * 2f * Mathf.PI / NumberOfGhosts),
             -Mathf.Sin(index * 2f * Mathf.PI / NumberOfGhosts),
             0f
         ) * maxVelocity * 0.3f;
 
-        // Preserve the original mass.
         bp[index].mass = Random.Range(0.01f, 0.05f);
 
-        // Preserve the trail behavior and scale-based width.
         TrailRenderer trail = sphere.AddComponent<TrailRenderer>();
         trailRenderer[index] = trail;
 
@@ -589,7 +566,6 @@ public class InteractiveBody : MonoBehaviour
 
         trail.colorGradient = gradient;
 
-        // Spawn the green explosion effect.
         CreateGhostlyExplosion(spawnPosition, brightGreen);
     }
 
@@ -598,7 +574,6 @@ public class InteractiveBody : MonoBehaviour
         if (body == null || body[index] == null)
             return 0f;
 
-        // Sphere diameter in world space.
         return Mathf.Abs(body[index].transform.lossyScale.x);
     }
 
@@ -669,7 +644,6 @@ public class InteractiveBody : MonoBehaviour
                 Time.fixedDeltaTime *
                 fastforwardConst;
 
-            // Rotate the sphere and face toward its travel direction.
             Vector2 planarVelocity = new Vector2(
                 bp[i].velocity.x,
                 bp[i].velocity.y
@@ -715,7 +689,6 @@ public class InteractiveBody : MonoBehaviour
 
         CreateGhostlyExplosion(position, explosionColor);
 
-        // Stop adding trail points; allow old ones to fade out.
         TrailRenderer trail = trailRenderer[index];
 
         if (trail != null)
@@ -724,7 +697,6 @@ public class InteractiveBody : MonoBehaviour
             trail.autodestruct = false;
         }
 
-        // Hide the sphere and its face without hiding its trail.
         Renderer[] renderers =
             deletedSphere.GetComponentsInChildren<Renderer>(true);
 
@@ -734,7 +706,6 @@ public class InteractiveBody : MonoBehaviour
                 renderer.enabled = false;
         }
 
-        // Release the array slot immediately for future spawning.
         body[index] = null;
         ghostVisuals[index] = null;
         trailRenderer[index] = null;
@@ -747,14 +718,12 @@ public class InteractiveBody : MonoBehaviour
         if (mp == null)
             return;
 
-        // Track when each hand was last detected.
         if (mp.LeftHandTracked)
             leftLastTrackedTime = Time.time;
 
         if (mp.RightHandTracked)
             rightLastTrackedTime = Time.time;
 
-        // Allow brief tracking interruptions without resetting gesture states.
         bool leftTrackingValid =
             mp.LeftHandTracked ||
             Time.time - leftLastTrackedTime <= handLostGracePeriod;
@@ -763,7 +732,6 @@ public class InteractiveBody : MonoBehaviour
             mp.RightHandTracked ||
             Time.time - rightLastTrackedTime <= handLostGracePeriod;
 
-        // Current gestures, ignoring short tracking dropouts.
         bool leftOpen = leftTrackingValid &&
                         mp.LeftHandOpen &&
                         !mp.LeftHandOpenApart;
@@ -786,7 +754,6 @@ public class InteractiveBody : MonoBehaviour
         bool rightOpenApart = rightTrackingValid &&
                               mp.RightHandOpenApart;
 
-        // Require each gesture to remain active long enough to be confirmed.
         bool confirmedLeftOpen =
             ConfirmGesture(leftOpen, ref leftOpenTimer);
 
@@ -805,7 +772,6 @@ public class InteractiveBody : MonoBehaviour
         bool confirmedRightOpenApart =
             ConfirmGesture(rightOpenApart, ref rightOpenApartTimer);
 
-        // Play audio only on the transition into a confirmed gesture.
         if (confirmedLeftOpen && !previousLeftOpen)
             PlayGestureAudio(GetRandomClip(openGestureClips, openGestureClip));
 
@@ -824,7 +790,6 @@ public class InteractiveBody : MonoBehaviour
         if (confirmedRightOpenApart && !previousRightOpenApart)
             PlayGestureAudio(GetRandomClip(openApartGestureClips, openApartGestureClip));
 
-        // Store confirmed states, not raw MediaPipe detections.
         previousLeftOpen = confirmedLeftOpen;
         previousRightOpen = confirmedRightOpen;
 
@@ -872,8 +837,6 @@ public class InteractiveBody : MonoBehaviour
         if (clip == null)
             return;
 
-        // One shared cooldown limits how often death sounds start, even when
-        // many spheres explode at once. Existing sounds are never stopped.
         if (Time.time < nextDeathSoundTime)
             return;
 
@@ -884,8 +847,6 @@ public class InteractiveBody : MonoBehaviour
         );
         nextDeathSoundTime = Time.time + minimumGap;
 
-        // Each playback gets its own AudioSource, so its pitch/volume cannot
-        // change or cut off another death or gesture sound.
         PlayIndependentAudio(
             clip,
             null,
@@ -900,8 +861,6 @@ public class InteractiveBody : MonoBehaviour
         if (gestureAudioSource == null || clip == null)
             return;
 
-        // Suppress new gesture sounds during explosions, but do not stop a
-        // gesture sound that is already playing.
         if (Time.time < suppressGestureAudioUntil)
             return;
 
@@ -944,7 +903,6 @@ public class InteractiveBody : MonoBehaviour
 
         if (template != null)
         {
-            // Preserve the Inspector-configured routing and playback behavior.
             voice.outputAudioMixerGroup = template.outputAudioMixerGroup;
             voice.mute = template.mute;
             voice.bypassEffects = template.bypassEffects;
@@ -988,9 +946,6 @@ public class InteractiveBody : MonoBehaviour
 
     private void CreateGhostlyExplosion(Vector3 position, Color baseColor)
     {
-        // Block new gesture sounds briefly during explosions (for example,
-        // prevent the bell from triggering), without cutting off sounds already
-        // playing. Every playback uses its own AudioSource.
         suppressGestureAudioUntil = Mathf.Max(
             suppressGestureAudioUntil,
             Time.time + explosionGestureAudioMuteTime

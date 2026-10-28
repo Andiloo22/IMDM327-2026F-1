@@ -36,7 +36,6 @@ public class MediaPipeInput : MonoBehaviour
         Mediapipe.Logger.MinLogLevel = Mediapipe.Logger.LogLevel.Warn;
         Glog.Minloglevel = 2;
 
-        // MediaPipe reads its models from the local cache.
         string folder = Path.Combine(Application.persistentDataPath, "MediaPipe");
         Directory.CreateDirectory(folder);
         foreach (string file in Directory.GetFiles(Path.Combine(Application.streamingAssetsPath, "MediaPipe")))
