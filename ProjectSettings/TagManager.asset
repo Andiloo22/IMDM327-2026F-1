@@ -32,6 +32,7 @@ TagManager:
   - Ball
   - QDSUIToggleCheckboxRadio
   - QDSUIToggleThumbnail
+  - Anchor
   layers:
   - Default
   - TransparentFX

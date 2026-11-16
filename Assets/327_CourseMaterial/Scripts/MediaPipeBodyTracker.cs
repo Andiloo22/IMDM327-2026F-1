@@ -15,6 +15,8 @@ public class MediaPipeBodyTracker : MonoBehaviour
     [SerializeField] private bool leftHandPinch;
     [SerializeField] private Vector3 rightHandPosition;
     [SerializeField] private bool rightHandPinch;
+    [SerializeField] private Vector3 rightPalmScale;
+    [SerializeField] private Vector3 leftPalmScale;
 
     [Header("Body Data")]
     [SerializeField] private Vector3 torsoPosition;
@@ -34,6 +36,8 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private Vector3 pendingRightHandPosition;
     private Vector3 pendingTorsoPosition;
     private Vector3 pendingHeadPosition;
+    private Vector3 pendingLeftPalmScale;
+    private Vector3 pendingRightPalmScale;
     private bool pendingLeftPinch;
     private bool pendingRightPinch;
     private bool leftHandTracked;
@@ -47,6 +51,8 @@ public class MediaPipeBodyTracker : MonoBehaviour
     private HolisticTrackingGraph subscribedRunner;
 
     public Vector3 LeftHandPosition => leftHandPosition;
+    public Vector3 RightPalmScale => rightPalmScale;
+    public Vector3 LeftPalmScale => leftPalmScale;
     public bool LeftHandPinch => leftHandPinch;
     public bool LeftHandTracked => isActiveAndEnabled && leftHandTracked;
     public Vector3 RightHandPosition => rightHandPosition;
@@ -169,6 +175,7 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
     private void Update()
     {
+        
         lock (dataLock)
         {
             if (leftDirty)
@@ -177,11 +184,15 @@ public class MediaPipeBodyTracker : MonoBehaviour
                 {
                     leftHandPosition = pendingLeftHandPosition;
                     leftHandPinch = pendingLeftPinch;
+                    leftPalmScale = pendingLeftPalmScale;
+                    rightPalmScale = pendingRightPalmScale;
                 }
                 else
                 {
                     leftHandPosition = Vector3.zero;
                     leftHandPinch = false;
+                    leftPalmScale = Vector3.zero;
+                    rightPalmScale = Vector3.zero;
                 }
 
                 leftDirty = false;
@@ -248,6 +259,19 @@ public class MediaPipeBodyTracker : MonoBehaviour
 
             leftDirty = true;
         }
+
+        if (landmarkList != null && landmarkList.Landmark.Count > 9)
+        {
+            leftHandTracked = true;
+            Vector3 wristPos = ToUnityVector(landmarkList.Landmark[0]);
+            Vector3 middleMcpPos = ToUnityVector(landmarkList.Landmark[9]);
+
+            pendingLeftHandPosition = wristPos;
+            pendingLeftPinch = IsPinching(landmarkList);
+
+            float palmLength = Vector3.Distance(wristPos, middleMcpPos);
+            pendingLeftPalmScale = Vector3.one * palmLength;
+        }
     }
 
     private void HandleRightHand(object sender, OutputStream<NormalizedLandmarkList>.OutputEventArgs eventArgs)
@@ -276,6 +300,19 @@ public class MediaPipeBodyTracker : MonoBehaviour
             }
 
             rightDirty = true;
+        }
+
+        if (landmarkList != null && landmarkList.Landmark.Count > 9)
+        {
+            leftHandTracked = true;
+            Vector3 wristPos = ToUnityVector(landmarkList.Landmark[0]);
+            Vector3 middleMcpPos = ToUnityVector(landmarkList.Landmark[9]);
+
+            pendingLeftHandPosition = wristPos;
+            pendingLeftPinch = IsPinching(landmarkList);
+
+            float palmLength = Vector3.Distance(wristPos, middleMcpPos);
+            pendingRightPalmScale = Vector3.one * palmLength;
         }
     }
 
